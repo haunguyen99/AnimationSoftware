@@ -1,0 +1,8 @@
+#pragma once
+
+#include <QLoggingCategory>
+
+Q_DECLARE_LOGGING_CATEGORY(logApp)
+Q_DECLARE_LOGGING_CATEGORY(logViewport)
+Q_DECLARE_LOGGING_CATEGORY(logIo)
+Q_DECLARE_LOGGING_CATEGORY(logFbx)

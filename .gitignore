@@ -1,0 +1,14 @@
+build/
+vcpkg_installed/
+tmp_vcpkg_manifest/
+
+*.log
+*.ilk
+*.pdb
+
+qt-online-installer-windows-x64-*.exe
+
+.vs/
+.vscode/
+out/
+dist/
