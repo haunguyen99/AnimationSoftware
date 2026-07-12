@@ -8,6 +8,8 @@
 
 #include <memory>
 
+#include "scene/Bounds3D.h"
+
 class EditorCamera;
 class QOpenGLShaderProgram;
 class Scene;
@@ -22,6 +24,13 @@ struct ViewportRenderOptions
 class ViewportRenderer
 {
 public:
+    enum class GizmoMode
+    {
+        Translate,
+        Rotate,
+        Scale
+    };
+
     ViewportRenderer();
     ~ViewportRenderer();
 
@@ -29,8 +38,10 @@ public:
     void resize(int width, int height);
     void render(const EditorCamera& camera, const ViewportRenderOptions& options);
     void syncScene(const Scene& scene);
+    void setSelectedBounds(const Bounds3D& bounds);
+    void setGizmo(const QVector3D& origin, float size, GizmoMode mode, const QVector<QVector3D>& axes, const QVector3D& cameraForward, int activeAxis);
+    void clearGizmo();
 
-private:
     struct Vertex
     {
         QVector3D position;
@@ -38,21 +49,30 @@ private:
         QVector3D color;
     };
 
+private:
     void createSceneGeometry();
     void uploadGeometry();
     void uploadImportedMesh(const Scene& scene);
+    void uploadSelectionBounds();
+    void uploadGizmo();
 
     QOpenGLFunctions_3_3_Core* functions_ = nullptr;
     std::unique_ptr<QOpenGLShaderProgram> shaderProgram_;
     QOpenGLVertexArrayObject vao_;
     QOpenGLVertexArrayObject importedVao_;
+    QOpenGLVertexArrayObject selectionVao_;
+    QOpenGLVertexArrayObject gizmoVao_;
     QOpenGLBuffer vertexBuffer_;
     QOpenGLBuffer importedVertexBuffer_;
     QOpenGLBuffer importedIndexBuffer_;
+    QOpenGLBuffer selectionVertexBuffer_;
+    QOpenGLBuffer gizmoVertexBuffer_;
     QVector<Vertex> gridVertices_;
     QVector<Vertex> axisVertices_;
     QVector<Vertex> importedVertices_;
     QVector<std::uint32_t> importedIndices_;
+    QVector<Vertex> selectionVertices_;
+    QVector<Vertex> gizmoVertices_;
     int viewportWidth_ = 1;
     int viewportHeight_ = 1;
 };

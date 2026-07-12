@@ -5,6 +5,7 @@
 
 #include <cstdint>
 
+#include "scene/AnimationData.h"
 #include "scene/Bounds3D.h"
 #include "scene/Transform.h"
 
@@ -25,10 +26,19 @@ public:
 
     const QVector<Id>& childIds() const;
     void addChildId(Id childId);
+    bool removeChildId(Id childId);
     void clearChildren();
 
     const Transform& localTransform() const;
     void setLocalTransform(const Transform& transform);
+    const Transform& authoredTransform() const;
+    void setAuthoredTransform(const Transform& transform);
+    bool hasAnimation() const;
+    bool hasTransformKeyframe(int frame) const;
+    const TransformKeyframeTrack& transformKeyframes() const;
+    void setTransformKeyframes(const TransformKeyframeTrack& keyframes);
+    void setTransformKeyframe(int frame, const Transform& transform);
+    bool removeTransformKeyframe(int frame);
 
     const Bounds3D& localBounds() const;
     void setLocalBounds(const Bounds3D& bounds);
@@ -39,6 +49,8 @@ public:
     const QVector<int>& meshHandles() const;
     void addMeshHandle(int meshHandle);
     void clearMeshHandles();
+    bool isVisible() const;
+    void setVisible(bool visible);
 
 private:
     Id id_ = 0;
@@ -47,6 +59,9 @@ private:
     QVector<Id> childIds_;
     QVector<int> meshHandles_;
     Transform localTransform_;
+    Transform authoredTransform_;
+    TransformKeyframeTrack transformKeyframes_;
     Bounds3D localBounds_;
     Bounds3D worldBounds_;
+    bool visible_ = true;
 };

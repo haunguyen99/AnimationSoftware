@@ -1,52 +1,263 @@
 #include "MainWindow.h"
 
 #include <QAction>
+#include <QDockWidget>
 #include <QFileDialog>
+#include <QFormLayout>
+#include <QCheckBox>
+#include <QDateTime>
+#include <QDoubleSpinBox>
+#include <QDir>
+#include <QFile>
+#include <QLabel>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QListWidget>
+#include <QFileInfo>
+#include <QPlainTextEdit>
+#include <QPushButton>
+#include <QRegularExpression>
+#include <QSettings>
+#include <QSignalBlocker>
+#include <QTextCursor>
+#include <QSlider>
+#include <QSpinBox>
 #include <QStatusBar>
+#include <QTimer>
 #include <QToolBar>
+#include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
+#include <QTreeWidgetItem>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
 
+#include "KeyframeTimelineWidget.h"
 #include "ViewportWidget.h"
+#include "io/PhoenixSceneDocument.h"
+#include "scene/PrimitiveMeshFactory.h"
+#include "scene/Scene.h"
+#include "scene/SceneObject.h"
+
+namespace
+{
+constexpr auto kPrimitiveTypeRole = Qt::UserRole + 101;
+
+QString formatVector3(const QVector3D& value)
+{
+    return QString("(%1, %2, %3)")
+        .arg(value.x(), 0, 'f', 2)
+        .arg(value.y(), 0, 'f', 2)
+        .arg(value.z(), 0, 'f', 2);
+}
+
+QString formatBounds(const Bounds3D& bounds)
+{
+    if (!bounds.isValid()) {
+        return "Invalid";
+    }
+
+    return QString("min %1 | max %2")
+        .arg(formatVector3(bounds.min()))
+        .arg(formatVector3(bounds.max()));
+}
+
+QString formatTransform(const Transform& transform)
+{
+    return QString("T %1 | R (%2, %3, %4, %5) | S %6")
+        .arg(formatVector3(transform.translation))
+        .arg(transform.rotation.scalar(), 0, 'f', 2)
+        .arg(transform.rotation.x(), 0, 'f', 2)
+        .arg(transform.rotation.y(), 0, 'f', 2)
+        .arg(transform.rotation.z(), 0, 'f', 2)
+        .arg(formatVector3(transform.scale));
+}
+
+QDoubleSpinBox* createChannelSpinBox(QWidget* parent)
+{
+    QDoubleSpinBox* spinBox = new QDoubleSpinBox(parent);
+    spinBox->setDecimals(3);
+    spinBox->setRange(-999999.0, 999999.0);
+    spinBox->setSingleStep(0.1);
+    spinBox->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    spinBox->setAlignment(Qt::AlignLeft);
+    spinBox->setStyleSheet("QDoubleSpinBox { min-height: 24px; }");
+    return spinBox;
+}
+
+QString objectDisplayName(const SceneObject& object)
+{
+    return object.name().isEmpty() ? QString("Object_%1").arg(object.id()) : object.name();
+}
+
+QString mayaCommandName(PrimitiveMeshFactory::Type type)
+{
+    switch (type) {
+    case PrimitiveMeshFactory::Type::Sphere: return "polySphere";
+    case PrimitiveMeshFactory::Type::Cube: return "polyCube";
+    case PrimitiveMeshFactory::Type::Cylinder: return "polyCylinder";
+    case PrimitiveMeshFactory::Type::Cone: return "polyCone";
+    case PrimitiveMeshFactory::Type::Torus: return "polyTorus";
+    case PrimitiveMeshFactory::Type::Plane: return "polyPlane";
+    case PrimitiveMeshFactory::Type::Disc: return "polyDisc";
+    case PrimitiveMeshFactory::Type::Pyramid: return "polyPyramid";
+    case PrimitiveMeshFactory::Type::Prism: return "polyPrism";
+    }
+
+    return "polyPrimitive";
+}
+
+QString primitivePrefix(PrimitiveMeshFactory::Type type)
+{
+    switch (type) {
+    case PrimitiveMeshFactory::Type::Sphere: return "pSphere";
+    case PrimitiveMeshFactory::Type::Cube: return "pCube";
+    case PrimitiveMeshFactory::Type::Cylinder: return "pCylinder";
+    case PrimitiveMeshFactory::Type::Cone: return "pCone";
+    case PrimitiveMeshFactory::Type::Torus: return "pTorus";
+    case PrimitiveMeshFactory::Type::Plane: return "pPlane";
+    case PrimitiveMeshFactory::Type::Disc: return "pDisc";
+    case PrimitiveMeshFactory::Type::Pyramid: return "pPyramid";
+    case PrimitiveMeshFactory::Type::Prism: return "pPrism";
+    }
+
+    return "pPrimitive";
+}
+
+QPushButton* createTransportButton(const QString& text, QWidget* parent)
+{
+    QPushButton* button = new QPushButton(text, parent);
+    button->setFixedWidth(28);
+    return button;
+}
+}
 
 MainWindow::MainWindow()
 {
     setWindowTitle("Phoenix Editor Beta");
-    resize(1280, 720);
+    resize(1440, 820);
+    setDockNestingEnabled(true);
+    setDockOptions(QMainWindow::AllowNestedDocks
+        | QMainWindow::AllowTabbedDocks
+        | QMainWindow::GroupedDragging
+        | QMainWindow::AnimatedDocks);
 
     viewport_ = new ViewportWidget(this);
-    setCentralWidget(viewport_);
+    playbackTimer_ = new QTimer(this);
+    playbackTimer_->setInterval(1000 / 24);
+    QObject::connect(playbackTimer_, &QTimer::timeout, this, &MainWindow::advancePlayback);
+    viewport_->setSelectionChangedCallback([this](SceneObject::Id objectId) {
+        selectObject(objectId, true);
+        if (objectId == 0) {
+            logSelectionToScriptEditor(0);
+            statusBar()->showMessage("Selection cleared", 2000);
+            return;
+        }
+
+        if (const SceneObject* object = viewport_->scene().findObject(objectId)) {
+            logSelectionToScriptEditor(objectId);
+            statusBar()->showMessage(QString("Selected: %1").arg(objectDisplayName(*object)), 2000);
+        }
+    });
+    viewport_->setObjectTransformChangedCallback([this](SceneObject::Id objectId) {
+        selectObject(objectId, true);
+        statusBar()->showMessage("Object transform updated", 1500);
+    });
 
     createMenus();
     createToolbar();
+    createDocks();
+    loadPreferences();
+    updateWindowTitle();
+    clearInspector();
     statusBar()->showMessage("Ready");
 }
 
 void MainWindow::createMenus()
 {
     QMenu* fileMenu = menuBar()->addMenu("&File");
-    importFbxAction_ = fileMenu->addAction("Import FBX");
+    newSceneAction_ = fileMenu->addAction("New Scene");
+    newSceneAction_->setShortcut(QKeySequence::New);
+    QObject::connect(newSceneAction_, &QAction::triggered, this, &MainWindow::newScene);
+
+    openSceneAction_ = fileMenu->addAction("Open Scene...");
+    openSceneAction_->setShortcut(QKeySequence::Open);
+    QObject::connect(openSceneAction_, &QAction::triggered, this, &MainWindow::openScene);
+
+    saveSceneAction_ = fileMenu->addAction("Save Scene");
+    saveSceneAction_->setShortcut(QKeySequence::Save);
+    QObject::connect(saveSceneAction_, &QAction::triggered, this, &MainWindow::saveScene);
+
+    saveSceneAsAction_ = fileMenu->addAction("Save Scene As...");
+    saveSceneAsAction_->setShortcut(QKeySequence::SaveAs);
+    QObject::connect(saveSceneAsAction_, &QAction::triggered, this, &MainWindow::saveSceneAs);
+
+    incrementAndSaveAction_ = fileMenu->addAction("Increment and Save");
+    incrementAndSaveAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_S));
+    QObject::connect(incrementAndSaveAction_, &QAction::triggered, this, &MainWindow::incrementAndSave);
+
+    archiveSceneAction_ = fileMenu->addAction("Archive Scene");
+    QObject::connect(archiveSceneAction_, &QAction::triggered, this, &MainWindow::archiveScene);
+
+    savePreferencesAction_ = fileMenu->addAction("Save Preferences");
+    QObject::connect(savePreferencesAction_, &QAction::triggered, this, &MainWindow::savePreferences);
+
+    optimizeSceneSizeAction_ = fileMenu->addAction("Optimize Scene Size");
+    QObject::connect(optimizeSceneSizeAction_, &QAction::triggered, this, [this]() {
+        viewport_->optimizeSceneStorage();
+        refreshScenePanels();
+        appendScriptComment("Scene storage optimized");
+        statusBar()->showMessage("Scene storage optimized", 2000);
+    });
+
+    fileMenu->addSection("Import/Export");
+    importFbxAction_ = fileMenu->addAction("Import...");
+    importFbxAction_->setObjectName("importFbxAction");
     QObject::connect(importFbxAction_, &QAction::triggered, this, &MainWindow::importFbx);
+
+    exportAllAction_ = fileMenu->addAction("Export All...");
+    QObject::connect(exportAllAction_, &QAction::triggered, this, &MainWindow::exportAll);
+
+    exportSelectionAction_ = fileMenu->addAction("Export Selection...");
+    QObject::connect(exportSelectionAction_, &QAction::triggered, this, &MainWindow::exportSelection);
+
+    QMenu* createMenu = menuBar()->addMenu("&Create");
+    polygonPrimitivesAction_ = createMenu->addAction("Polygon Primitives");
+    polygonPrimitivesAction_->setObjectName("polygonPrimitivesAction");
+    QObject::connect(polygonPrimitivesAction_, &QAction::triggered, this, &MainWindow::showPolygonPrimitivesWindow);
+
+    QMenu* windowsMenu = menuBar()->addMenu("&Windows");
+    scriptEditorAction_ = windowsMenu->addAction("Script Editor");
+    scriptEditorAction_->setObjectName("scriptEditorAction");
+    QObject::connect(scriptEditorAction_, &QAction::triggered, this, &MainWindow::showScriptEditorWindow);
 
     QMenu* viewMenu = menuBar()->addMenu("&View");
 
     resetCameraAction_ = viewMenu->addAction("Reset Camera");
     QObject::connect(resetCameraAction_, &QAction::triggered, this, [this]() {
         viewport_->resetCamera();
+        appendScriptHistoryLine("viewSet -home;");
+        appendScriptHistoryLine("// Result: camera reset //");
         statusBar()->showMessage("Camera reset", 2000);
     });
 
     frameSceneAction_ = viewMenu->addAction("Frame Scene");
     QObject::connect(frameSceneAction_, &QAction::triggered, this, [this]() {
         viewport_->frameScene();
+        appendScriptHistoryLine("viewFit;");
+        appendScriptHistoryLine("// Result: scene framed //");
         statusBar()->showMessage("Scene framed", 2000);
     });
+
+    frameSelectedAction_ = viewMenu->addAction("Frame Selected");
+    frameSelectedAction_->setEnabled(false);
+    QObject::connect(frameSelectedAction_, &QAction::triggered, this, &MainWindow::frameSelectedObject);
 
     wireframeAction_ = viewMenu->addAction("Wireframe");
     wireframeAction_->setCheckable(true);
     QObject::connect(wireframeAction_, &QAction::toggled, this, [this](bool enabled) {
         viewport_->setWireframeEnabled(enabled);
+        appendScriptComment(QString("Wireframe %1").arg(enabled ? "on" : "off"));
         statusBar()->showMessage(enabled ? "Wireframe on" : "Wireframe off", 2000);
     });
 
@@ -55,6 +266,7 @@ void MainWindow::createMenus()
     showAxisAction_->setChecked(true);
     QObject::connect(showAxisAction_, &QAction::toggled, this, [this](bool enabled) {
         viewport_->setAxisVisible(enabled);
+        appendScriptComment(QString("Axis visibility %1").arg(enabled ? "on" : "off"));
         statusBar()->showMessage(enabled ? "Axis visible" : "Axis hidden", 2000);
     });
 
@@ -62,8 +274,45 @@ void MainWindow::createMenus()
     backfaceCullingAction_->setCheckable(true);
     QObject::connect(backfaceCullingAction_, &QAction::toggled, this, [this](bool enabled) {
         viewport_->setBackfaceCullingEnabled(enabled);
+        appendScriptComment(QString("Backface culling %1").arg(enabled ? "on" : "off"));
         statusBar()->showMessage(enabled ? "Backface culling on" : "Backface culling off", 2000);
     });
+
+    viewMenu->addSeparator();
+    restoreWorkspaceLayoutAction_ = viewMenu->addAction("Restore Default Layout");
+    restoreWorkspaceLayoutAction_->setObjectName("restoreWorkspaceLayoutAction");
+    QObject::connect(restoreWorkspaceLayoutAction_, &QAction::triggered, this, &MainWindow::restoreDefaultWorkspaceLayout);
+
+    QMenu* transformMenu = menuBar()->addMenu("&Transform");
+    translateAction_ = transformMenu->addAction("Translate");
+    translateAction_->setObjectName("translateAction");
+    translateAction_->setCheckable(true);
+    translateAction_->setShortcut(QKeySequence(Qt::Key_W));
+    rotateAction_ = transformMenu->addAction("Rotate");
+    rotateAction_->setObjectName("rotateAction");
+    rotateAction_->setCheckable(true);
+    rotateAction_->setShortcut(QKeySequence(Qt::Key_E));
+    scaleAction_ = transformMenu->addAction("Scale");
+    scaleAction_->setObjectName("scaleAction");
+    scaleAction_->setCheckable(true);
+    scaleAction_->setShortcut(QKeySequence(Qt::Key_R));
+
+    QObject::connect(translateAction_, &QAction::triggered, this, [this]() { setTransformUiMode(TransformUiMode::Translate); });
+    QObject::connect(rotateAction_, &QAction::triggered, this, [this]() { setTransformUiMode(TransformUiMode::Rotate); });
+    QObject::connect(scaleAction_, &QAction::triggered, this, [this]() { setTransformUiMode(TransformUiMode::Scale); });
+    setTransformUiMode(TransformUiMode::Translate);
+
+    QMenu* axisMenu = transformMenu->addMenu("Axis Orientation");
+    worldAxisAction_ = axisMenu->addAction("World");
+    worldAxisAction_->setObjectName("worldAxisAction");
+    worldAxisAction_->setCheckable(true);
+    localAxisAction_ = axisMenu->addAction("Local");
+    localAxisAction_->setObjectName("localAxisAction");
+    localAxisAction_->setCheckable(true);
+
+    QObject::connect(worldAxisAction_, &QAction::triggered, this, [this]() { setAxisUiOrientation(AxisUiOrientation::World); });
+    QObject::connect(localAxisAction_, &QAction::triggered, this, [this]() { setAxisUiOrientation(AxisUiOrientation::Local); });
+    setAxisUiOrientation(AxisUiOrientation::World);
 }
 
 void MainWindow::createToolbar()
@@ -71,13 +320,454 @@ void MainWindow::createToolbar()
     toolbar_ = addToolBar("Viewport");
     toolbar_->setMovable(false);
     toolbar_->addAction(importFbxAction_);
+    toolbar_->addAction(polygonPrimitivesAction_);
     toolbar_->addSeparator();
     toolbar_->addAction(resetCameraAction_);
     toolbar_->addAction(frameSceneAction_);
+    toolbar_->addAction(frameSelectedAction_);
+    toolbar_->addSeparator();
+    toolbar_->addAction(translateAction_);
+    toolbar_->addAction(rotateAction_);
+    toolbar_->addAction(scaleAction_);
+    toolbar_->addSeparator();
+    toolbar_->addAction(worldAxisAction_);
+    toolbar_->addAction(localAxisAction_);
     toolbar_->addSeparator();
     toolbar_->addAction(wireframeAction_);
     toolbar_->addAction(showAxisAction_);
     toolbar_->addAction(backfaceCullingAction_);
+}
+
+void MainWindow::createDocks()
+{
+    setCentralWidget(new QWidget(this));
+
+    viewportDock_ = new QDockWidget("Viewport", this);
+    viewportDock_->setObjectName("ViewportDock");
+    viewportDock_->setAllowedAreas(Qt::AllDockWidgetAreas);
+    viewportDock_->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+    viewportDock_->setWidget(viewport_);
+    addDockWidget(Qt::LeftDockWidgetArea, viewportDock_);
+
+    outlinerDock_ = new QDockWidget("Outliner", this);
+    outlinerDock_->setObjectName("OutlinerDock");
+    outlinerDock_->setAllowedAreas(Qt::AllDockWidgetAreas);
+    outlinerDock_->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+    outlinerDock_->setWidget(createOutlinerPanel());
+    addDockWidget(Qt::LeftDockWidgetArea, outlinerDock_);
+
+    inspectorDock_ = new QDockWidget("Channel Box", this);
+    inspectorDock_->setObjectName("InspectorDock");
+    inspectorDock_->setAllowedAreas(Qt::AllDockWidgetAreas);
+    inspectorDock_->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+    inspectorDock_->setWidget(createInspectorPanel());
+    addDockWidget(Qt::RightDockWidgetArea, inspectorDock_);
+
+    splitDockWidget(outlinerDock_, viewportDock_, Qt::Horizontal);
+    splitDockWidget(viewportDock_, inspectorDock_, Qt::Horizontal);
+    resizeDocks({ outlinerDock_, viewportDock_, inspectorDock_ }, { 280, 920, 320 }, Qt::Horizontal);
+
+    polygonPrimitivesDock_ = new QDockWidget("Polygon Primitives", this);
+    polygonPrimitivesDock_->setObjectName("PolygonPrimitivesDock");
+    polygonPrimitivesDock_->setAllowedAreas(Qt::AllDockWidgetAreas);
+    polygonPrimitivesDock_->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
+
+    QWidget* primitivesPanel = new QWidget(this);
+    QVBoxLayout* primitivesLayout = new QVBoxLayout(primitivesPanel);
+    primitivesLayout->setContentsMargins(8, 8, 8, 8);
+
+    polygonPrimitivesList_ = new QListWidget(primitivesPanel);
+    polygonPrimitivesList_->setObjectName("polygonPrimitivesList");
+    const struct PrimitiveEntry {
+        const char* label;
+        bool implemented;
+        PrimitiveMeshFactory::Type type;
+    } entries[] = {
+        { "Sphere", true, PrimitiveMeshFactory::Type::Sphere },
+        { "Cube", true, PrimitiveMeshFactory::Type::Cube },
+        { "Cylinder", true, PrimitiveMeshFactory::Type::Cylinder },
+        { "Cone", true, PrimitiveMeshFactory::Type::Cone },
+        { "Torus", true, PrimitiveMeshFactory::Type::Torus },
+        { "Plane", true, PrimitiveMeshFactory::Type::Plane },
+        { "Disc", true, PrimitiveMeshFactory::Type::Disc },
+        { "Platonic Solid", false, PrimitiveMeshFactory::Type::Cube },
+        { "Pyramid", true, PrimitiveMeshFactory::Type::Pyramid },
+        { "Prism", true, PrimitiveMeshFactory::Type::Prism },
+        { "Pipe", false, PrimitiveMeshFactory::Type::Cylinder },
+        { "Helix", false, PrimitiveMeshFactory::Type::Cylinder },
+        { "Gear", false, PrimitiveMeshFactory::Type::Cylinder },
+        { "Soccer Ball", false, PrimitiveMeshFactory::Type::Sphere },
+        { "Super Ellipse", false, PrimitiveMeshFactory::Type::Sphere },
+        { "Spherical Harmonics", false, PrimitiveMeshFactory::Type::Sphere },
+        { "Ultra Shape", false, PrimitiveMeshFactory::Type::Sphere }
+    };
+
+    for (const PrimitiveEntry& entry : entries) {
+        QListWidgetItem* item = new QListWidgetItem(QString::fromUtf8(entry.label), polygonPrimitivesList_);
+        item->setData(kPrimitiveTypeRole, static_cast<int>(entry.type));
+        if (!entry.implemented) {
+            item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
+            item->setText(QString("%1 (coming soon)").arg(entry.label));
+        }
+    }
+    QObject::connect(polygonPrimitivesList_, &QListWidget::itemClicked, this, [this](QListWidgetItem*) {
+        createPrimitiveFromPalette();
+    });
+    QObject::connect(polygonPrimitivesList_, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem*) {
+        createPrimitiveFromPalette();
+    });
+
+    QPushButton* createPrimitiveButton = new QPushButton("Create Selected Primitive", primitivesPanel);
+    createPrimitiveButton->setObjectName("createPrimitiveButton");
+    QObject::connect(createPrimitiveButton, &QPushButton::clicked, this, &MainWindow::createPrimitiveFromPalette);
+
+    QCheckBox* interactiveCreationCheckBox = new QCheckBox("Interactive Creation", primitivesPanel);
+    interactiveCreationCheckBox->setObjectName("interactiveCreationCheckBox");
+    interactiveCreationCheckBox->setChecked(interactivePrimitiveCreationEnabled_);
+    QObject::connect(interactiveCreationCheckBox, &QCheckBox::toggled, this, [this](bool enabled) {
+        interactivePrimitiveCreationEnabled_ = enabled;
+    });
+
+    QCheckBox* exitOnCompletionCheckBox = new QCheckBox("Exit On Completion", primitivesPanel);
+    exitOnCompletionCheckBox->setObjectName("exitOnCompletionCheckBox");
+    exitOnCompletionCheckBox->setChecked(exitPrimitiveToolOnCompletionEnabled_);
+    QObject::connect(exitOnCompletionCheckBox, &QCheckBox::toggled, this, [this](bool enabled) {
+        exitPrimitiveToolOnCompletionEnabled_ = enabled;
+    });
+
+    primitivesLayout->addWidget(polygonPrimitivesList_);
+    primitivesLayout->addWidget(createPrimitiveButton);
+    primitivesLayout->addWidget(interactiveCreationCheckBox);
+    primitivesLayout->addWidget(exitOnCompletionCheckBox);
+    polygonPrimitivesDock_->setWidget(primitivesPanel);
+    addDockWidget(Qt::RightDockWidgetArea, polygonPrimitivesDock_);
+    polygonPrimitivesDock_->setFloating(true);
+    polygonPrimitivesDock_->hide();
+
+    scriptEditorDock_ = new QDockWidget("Script Editor", this);
+    scriptEditorDock_->setObjectName("ScriptEditorDock");
+    scriptEditorDock_->setAllowedAreas(Qt::AllDockWidgetAreas);
+    scriptEditorDock_->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
+    scriptEditorDock_->setWidget(createScriptEditorPanel());
+    addDockWidget(Qt::BottomDockWidgetArea, scriptEditorDock_);
+    scriptEditorDock_->setFloating(true);
+    scriptEditorDock_->hide();
+
+    timeSliderDock_ = new QDockWidget("Time Slider", this);
+    timeSliderDock_->setObjectName("TimeSliderDock");
+    timeSliderDock_->setAllowedAreas(Qt::BottomDockWidgetArea | Qt::TopDockWidgetArea);
+    timeSliderDock_->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+    timeSliderDock_->setWidget(createTimeSliderPanel());
+    addDockWidget(Qt::BottomDockWidgetArea, timeSliderDock_);
+    resizeDocks({ timeSliderDock_ }, { 150 }, Qt::Vertical);
+}
+
+void MainWindow::newScene()
+{
+    viewport_->clearScene();
+    setCurrentFrame(viewport_->currentFrame(), false);
+    currentSceneFilePath_.clear();
+    refreshScenePanels();
+    viewport_->resetCamera();
+    updateWindowTitle();
+    appendScriptHistoryLine("file -f -new;");
+    appendScriptHistoryLine("// Result: new scene //");
+    statusBar()->showMessage("New scene created", 2000);
+}
+
+void MainWindow::openScene()
+{
+    const QString filePath = QFileDialog::getOpenFileName(
+        this,
+        "Open Scene",
+        currentSceneFilePath_.isEmpty() ? QString() : QFileInfo(currentSceneFilePath_).absolutePath(),
+        "Phoenix Scene (*.phoenixscene)");
+
+    if (filePath.isEmpty()) {
+        statusBar()->showMessage("Open scene cancelled", 1500);
+        return;
+    }
+
+    openSceneFromPath(filePath, true);
+}
+
+QWidget* MainWindow::createOutlinerPanel()
+{
+    QWidget* panel = new QWidget(this);
+    QVBoxLayout* layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(8, 8, 8, 8);
+
+    outlinerTree_ = new QTreeWidget(panel);
+    outlinerTree_->setObjectName("outlinerTree");
+    outlinerTree_->setHeaderLabel("Scene");
+    outlinerTree_->setSelectionMode(QAbstractItemView::SingleSelection);
+    QObject::connect(outlinerTree_, &QTreeWidget::itemSelectionChanged, this, &MainWindow::handleOutlinerSelectionChanged);
+    layout->addWidget(outlinerTree_);
+
+    return panel;
+}
+
+QWidget* MainWindow::createInspectorPanel()
+{
+    QWidget* inspectorPanel = new QWidget(this);
+    QVBoxLayout* inspectorLayout = new QVBoxLayout(inspectorPanel);
+    inspectorLayout->setContentsMargins(12, 12, 12, 12);
+
+    inspectorEmptyStateLabel_ = new QLabel(inspectorPanel);
+    inspectorEmptyStateLabel_->setWordWrap(true);
+
+    inspectorDetailsWidget_ = new QWidget(inspectorPanel);
+    QFormLayout* inspectorFormLayout = new QFormLayout(inspectorDetailsWidget_);
+    inspectorFormLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    channelObjectNameLabel_ = new QLabel(inspectorDetailsWidget_);
+    channelObjectNameLabel_->setObjectName("channelObjectNameLabel");
+    channelObjectNameLabel_->setWordWrap(true);
+    channelObjectNameLabel_->setStyleSheet("font-weight: 600; padding-bottom: 4px;");
+
+    translateXSpinBox_ = createChannelSpinBox(inspectorDetailsWidget_);
+    translateXSpinBox_->setObjectName("translateXSpinBox");
+    translateYSpinBox_ = createChannelSpinBox(inspectorDetailsWidget_);
+    translateYSpinBox_->setObjectName("translateYSpinBox");
+    translateZSpinBox_ = createChannelSpinBox(inspectorDetailsWidget_);
+    translateZSpinBox_->setObjectName("translateZSpinBox");
+    rotateXSpinBox_ = createChannelSpinBox(inspectorDetailsWidget_);
+    rotateXSpinBox_->setObjectName("rotateXSpinBox");
+    rotateYSpinBox_ = createChannelSpinBox(inspectorDetailsWidget_);
+    rotateYSpinBox_->setObjectName("rotateYSpinBox");
+    rotateZSpinBox_ = createChannelSpinBox(inspectorDetailsWidget_);
+    rotateZSpinBox_->setObjectName("rotateZSpinBox");
+    scaleXSpinBox_ = createChannelSpinBox(inspectorDetailsWidget_);
+    scaleXSpinBox_->setObjectName("scaleXSpinBox");
+    scaleYSpinBox_ = createChannelSpinBox(inspectorDetailsWidget_);
+    scaleYSpinBox_->setObjectName("scaleYSpinBox");
+    scaleZSpinBox_ = createChannelSpinBox(inspectorDetailsWidget_);
+    scaleZSpinBox_->setObjectName("scaleZSpinBox");
+    scaleXSpinBox_->setValue(1.0);
+    scaleYSpinBox_->setValue(1.0);
+    scaleZSpinBox_->setValue(1.0);
+    visibilityCheckBox_ = new QCheckBox("on", inspectorDetailsWidget_);
+    visibilityCheckBox_->setObjectName("visibilityCheckBox");
+
+    inspectorFormLayout->addRow(channelObjectNameLabel_);
+    inspectorFormLayout->addRow("Translate X", translateXSpinBox_);
+    inspectorFormLayout->addRow("Translate Y", translateYSpinBox_);
+    inspectorFormLayout->addRow("Translate Z", translateZSpinBox_);
+    inspectorFormLayout->addRow("Rotate X", rotateXSpinBox_);
+    inspectorFormLayout->addRow("Rotate Y", rotateYSpinBox_);
+    inspectorFormLayout->addRow("Rotate Z", rotateZSpinBox_);
+    inspectorFormLayout->addRow("Scale X", scaleXSpinBox_);
+    inspectorFormLayout->addRow("Scale Y", scaleYSpinBox_);
+    inspectorFormLayout->addRow("Scale Z", scaleZSpinBox_);
+    inspectorFormLayout->addRow("Visibility", visibilityCheckBox_);
+
+    for (QDoubleSpinBox* spinBox : { translateXSpinBox_, translateYSpinBox_, translateZSpinBox_,
+             rotateXSpinBox_, rotateYSpinBox_, rotateZSpinBox_,
+             scaleXSpinBox_, scaleYSpinBox_, scaleZSpinBox_ }) {
+        QObject::connect(spinBox, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) {
+            applyChannelBoxToSelection();
+        });
+    }
+    QObject::connect(visibilityCheckBox_, &QCheckBox::toggled, this, &MainWindow::applyVisibilityToSelection);
+
+    frameSelectedButton_ = new QPushButton("Frame Selected", inspectorPanel);
+    frameSelectedButton_->setObjectName("frameSelectedButton");
+    frameSelectedButton_->setEnabled(false);
+    QObject::connect(frameSelectedButton_, &QPushButton::clicked, this, &MainWindow::frameSelectedObject);
+
+    inspectorLayout->addWidget(inspectorEmptyStateLabel_);
+    inspectorLayout->addWidget(inspectorDetailsWidget_);
+    inspectorLayout->addWidget(frameSelectedButton_);
+    inspectorLayout->addStretch();
+
+    return inspectorPanel;
+}
+
+QWidget* MainWindow::createTimeSliderPanel()
+{
+    QWidget* panel = new QWidget(this);
+    QVBoxLayout* rootLayout = new QVBoxLayout(panel);
+    rootLayout->setContentsMargins(10, 8, 10, 8);
+    rootLayout->setSpacing(6);
+
+    QHBoxLayout* topRow = new QHBoxLayout();
+    topRow->setSpacing(10);
+
+    playbackStartSpinBox_ = new QSpinBox(panel);
+    playbackStartSpinBox_->setObjectName("playbackStartSpinBox");
+    playbackStartSpinBox_->setRange(-10000, 100000);
+    playbackStartSpinBox_->setValue(playbackStartFrame_);
+
+    playbackEndSpinBox_ = new QSpinBox(panel);
+    playbackEndSpinBox_->setObjectName("playbackEndSpinBox");
+    playbackEndSpinBox_->setRange(-10000, 100000);
+    playbackEndSpinBox_->setValue(playbackEndFrame_);
+
+    currentFrameSpinBox_ = new QSpinBox(panel);
+    currentFrameSpinBox_->setObjectName("currentFrameSpinBox");
+    currentFrameSpinBox_->setRange(playbackStartFrame_, playbackEndFrame_);
+    currentFrameSpinBox_->setValue(currentFrame_);
+
+    topRow->addWidget(new QLabel("Start", panel));
+    topRow->addWidget(playbackStartSpinBox_);
+    topRow->addWidget(new QLabel("End", panel));
+    topRow->addWidget(playbackEndSpinBox_);
+    topRow->addStretch();
+    autoKeyButton_ = new QPushButton("Auto Key", panel);
+    autoKeyButton_->setObjectName("autoKeyButton");
+    autoKeyButton_->setCheckable(true);
+    autoKeyButton_->setChecked(autoKeyEnabled_);
+    topRow->addWidget(autoKeyButton_);
+    setKeyButton_ = new QPushButton("Key Selected", panel);
+    setKeyButton_->setObjectName("setKeyButton");
+    setKeyButton_->setEnabled(false);
+    topRow->addWidget(setKeyButton_);
+    deleteKeyButton_ = new QPushButton("Delete Key", panel);
+    deleteKeyButton_->setObjectName("deleteKeyButton");
+    deleteKeyButton_->setEnabled(false);
+    topRow->addWidget(deleteKeyButton_);
+    topRow->addWidget(new QLabel("Current", panel));
+    topRow->addWidget(currentFrameSpinBox_);
+
+    QWidget* ticksHost = new QWidget(panel);
+    QVBoxLayout* ticksLayout = new QVBoxLayout(ticksHost);
+    ticksLayout->setContentsMargins(0, 0, 0, 0);
+    ticksLayout->setSpacing(2);
+
+    QHBoxLayout* labelsRow = new QHBoxLayout();
+    labelsRow->setContentsMargins(4, 0, 4, 0);
+    labelsRow->setSpacing(0);
+    for (int frame = 0; frame <= 24; ++frame) {
+        QLabel* label = new QLabel(QString::number(frame), ticksHost);
+        label->setAlignment(frame == 24 ? Qt::AlignRight : Qt::AlignLeft);
+        labelsRow->addWidget(label, 1);
+    }
+
+    timeSlider_ = new QSlider(Qt::Horizontal, ticksHost);
+    timeSlider_->setObjectName("timeSlider");
+    timeSlider_->setRange(playbackStartFrame_, playbackEndFrame_);
+    timeSlider_->setValue(currentFrame_);
+    timeSlider_->setTickPosition(QSlider::TicksBelow);
+    timeSlider_->setTickInterval(1);
+    timeSlider_->setPageStep(1);
+
+    keyframeTimelineWidget_ = new KeyframeTimelineWidget(ticksHost);
+    keyframeTimelineWidget_->setObjectName("keyframeTimelineWidget");
+    keyframeTimelineWidget_->setFrameRange(playbackStartFrame_, playbackEndFrame_);
+    keyframeTimelineWidget_->setCurrentFrame(currentFrame_);
+
+    timelineStatusLabel_ = new QLabel("No selection", panel);
+    timelineStatusLabel_->setObjectName("timelineStatusLabel");
+    timelineStatusLabel_->setStyleSheet("color: #bdbdbd;");
+
+    ticksLayout->addLayout(labelsRow);
+    ticksLayout->addWidget(keyframeTimelineWidget_);
+    ticksLayout->addWidget(timeSlider_);
+
+    QHBoxLayout* controlsRow = new QHBoxLayout();
+    controlsRow->setSpacing(4);
+    controlsRow->addStretch();
+
+    QPushButton* jumpStartButton = createTransportButton("|<", panel);
+    jumpStartButton->setObjectName("jumpStartButton");
+    QPushButton* stepBackButton = createTransportButton("<", panel);
+    stepBackButton->setObjectName("stepBackButton");
+    playPauseButton_ = createTransportButton(">", panel);
+    playPauseButton_->setObjectName("playPauseButton");
+    QPushButton* stepForwardButton = createTransportButton(">", panel);
+    stepForwardButton->setObjectName("stepForwardButton");
+    QPushButton* jumpEndButton = createTransportButton(">|", panel);
+    jumpEndButton->setObjectName("jumpEndButton");
+
+    controlsRow->addWidget(jumpStartButton);
+    controlsRow->addWidget(stepBackButton);
+    controlsRow->addWidget(playPauseButton_);
+    controlsRow->addWidget(stepForwardButton);
+    controlsRow->addWidget(jumpEndButton);
+
+    QObject::connect(playbackStartSpinBox_, qOverload<int>(&QSpinBox::valueChanged), this, [this](int) {
+        if (!updatingTimeSlider_) {
+            setPlaybackRange(playbackStartSpinBox_->value(), playbackEndSpinBox_->value());
+        }
+    });
+    QObject::connect(playbackEndSpinBox_, qOverload<int>(&QSpinBox::valueChanged), this, [this](int) {
+        if (!updatingTimeSlider_) {
+            setPlaybackRange(playbackStartSpinBox_->value(), playbackEndSpinBox_->value());
+        }
+    });
+    QObject::connect(currentFrameSpinBox_, qOverload<int>(&QSpinBox::valueChanged), this, [this](int frame) {
+        if (!updatingTimeSlider_) {
+            setCurrentFrame(frame);
+        }
+    });
+    QObject::connect(timeSlider_, &QSlider::valueChanged, this, [this](int frame) {
+        if (!updatingTimeSlider_) {
+            setCurrentFrame(frame);
+        }
+    });
+    QObject::connect(jumpStartButton, &QPushButton::clicked, this, [this]() { setCurrentFrame(playbackStartFrame_); });
+    QObject::connect(stepBackButton, &QPushButton::clicked, this, [this]() { stepFrame(-1); });
+    QObject::connect(playPauseButton_, &QPushButton::clicked, this, &MainWindow::togglePlayback);
+    QObject::connect(stepForwardButton, &QPushButton::clicked, this, [this]() { stepFrame(1); });
+    QObject::connect(jumpEndButton, &QPushButton::clicked, this, [this]() { setCurrentFrame(playbackEndFrame_); });
+    QObject::connect(setKeyButton_, &QPushButton::clicked, this, [this]() { setKeyForSelection(true); });
+    QObject::connect(deleteKeyButton_, &QPushButton::clicked, this, [this]() { deleteKeyForSelection(true); });
+    QObject::connect(autoKeyButton_, &QPushButton::toggled, this, [this](bool enabled) { setAutoKeyEnabled(enabled, true); });
+
+    rootLayout->addLayout(topRow);
+    rootLayout->addWidget(ticksHost);
+    rootLayout->addWidget(timelineStatusLabel_);
+    rootLayout->addLayout(controlsRow);
+    refreshAnimationTimelineUi();
+    return panel;
+}
+
+QWidget* MainWindow::createScriptEditorPanel()
+{
+    QWidget* panel = new QWidget(this);
+    QVBoxLayout* rootLayout = new QVBoxLayout(panel);
+    rootLayout->setContentsMargins(6, 6, 6, 6);
+    rootLayout->setSpacing(6);
+
+    QMenuBar* menuBar = new QMenuBar(panel);
+    QMenu* fileMenu = menuBar->addMenu("File");
+    fileMenu->addAction("Clear History", this, &MainWindow::clearScriptHistory);
+    QMenu* editMenu = menuBar->addMenu("Edit");
+    editMenu->addAction("Execute All", this, &MainWindow::executeScriptEditorAll);
+    editMenu->addAction("Execute Selection", this, &MainWindow::executeScriptEditorSelection);
+    menuBar->addMenu("History");
+    menuBar->addMenu("Command");
+    menuBar->addMenu("Tabs");
+    menuBar->addMenu("Help");
+
+    QToolBar* toolBar = new QToolBar(panel);
+    toolBar->setMovable(false);
+    QAction* executeAllAction = toolBar->addAction("Execute All");
+    executeAllAction->setObjectName("scriptExecuteAllAction");
+    QObject::connect(executeAllAction, &QAction::triggered, this, &MainWindow::executeScriptEditorAll);
+    QAction* executeSelectionAction = toolBar->addAction("Execute Selection");
+    executeSelectionAction->setObjectName("scriptExecuteSelectionAction");
+    QObject::connect(executeSelectionAction, &QAction::triggered, this, &MainWindow::executeScriptEditorSelection);
+    QAction* clearHistoryAction = toolBar->addAction("Clear History");
+    clearHistoryAction->setObjectName("scriptClearHistoryAction");
+    QObject::connect(clearHistoryAction, &QAction::triggered, this, &MainWindow::clearScriptHistory);
+
+    scriptHistoryTextEdit_ = new QPlainTextEdit(panel);
+    scriptHistoryTextEdit_->setObjectName("scriptHistoryTextEdit");
+    scriptHistoryTextEdit_->setReadOnly(true);
+    scriptHistoryTextEdit_->setPlaceholderText("Script history and command output...");
+    scriptHistoryTextEdit_->setMinimumHeight(240);
+
+    scriptInputTextEdit_ = new QPlainTextEdit(panel);
+    scriptInputTextEdit_->setObjectName("scriptInputTextEdit");
+    scriptInputTextEdit_->setPlaceholderText("Enter commands like:\nselect -cl;\npolyCube -w 1 -h 1 -d 1;");
+    scriptInputTextEdit_->setMaximumHeight(140);
+
+    rootLayout->setMenuBar(menuBar);
+    rootLayout->addWidget(toolBar);
+    rootLayout->addWidget(scriptHistoryTextEdit_, 1);
+    rootLayout->addWidget(scriptInputTextEdit_);
+    return panel;
 }
 
 void MainWindow::importFbx()
@@ -93,14 +783,1468 @@ void MainWindow::importFbx()
         return;
     }
 
+    importFbxFromPath(filePath, true);
+}
+
+bool MainWindow::saveScene()
+{
+    if (currentSceneFilePath_.isEmpty()) {
+        return saveSceneAs();
+    }
+
+    return saveSceneToPath(currentSceneFilePath_, true);
+}
+
+bool MainWindow::saveSceneAs()
+{
+    const QString filePath = QFileDialog::getSaveFileName(
+        this,
+        "Save Scene As",
+        currentSceneFilePath_.isEmpty() ? QString("untitled.phoenixscene") : currentSceneFilePath_,
+        "Phoenix Scene (*.phoenixscene)");
+
+    if (filePath.isEmpty()) {
+        statusBar()->showMessage("Save scene cancelled", 1500);
+        return false;
+    }
+
+    return saveSceneToPath(filePath, true);
+}
+
+bool MainWindow::openSceneFromPath(const QString& filePath, bool logToScript)
+{
+    const PhoenixSceneDocument::LoadResult result = PhoenixSceneDocument::loadFromFile(filePath);
+    if (!result.success) {
+        QMessageBox::warning(this, "Open Scene", result.errorMessage);
+        statusBar()->showMessage("Open scene failed", 3000);
+        return false;
+    }
+
+    viewport_->replaceScene(result.scene);
+    setCurrentFrame(viewport_->currentFrame(), false);
+    currentSceneFilePath_ = filePath;
+    refreshScenePanels();
+    viewport_->frameScene();
+    updateWindowTitle();
+    if (logToScript) {
+        appendScriptHistoryLine(QString("file -o \"%1\";").arg(QDir::toNativeSeparators(filePath)));
+        appendScriptHistoryLine(QString("// Result: opened %1 //").arg(QFileInfo(filePath).fileName()));
+    }
+    statusBar()->showMessage(QString("Opened %1").arg(QFileInfo(filePath).fileName()), 3000);
+    return true;
+}
+
+bool MainWindow::importFbxFromPath(const QString& filePath, bool logToScript)
+{
     if (!viewport_->importFbx(filePath)) {
         const QString errorMessage = viewport_->lastImportMessage().isEmpty()
             ? "Unknown FBX import error."
             : viewport_->lastImportMessage();
-        statusBar()->showMessage(QString("Import failed: %1").arg(errorMessage), 5000);
+        statusBar()->showMessage(QString("Import failed: %1").arg(QFileInfo(filePath).fileName()), 5000);
         QMessageBox::warning(this, "Import FBX", errorMessage);
+        return false;
+    }
+
+    setCurrentFrame(currentFrame_, false);
+    refreshScenePanels();
+    if (logToScript) {
+        appendScriptHistoryLine(QString("file -import \"%1\";").arg(QDir::toNativeSeparators(filePath)));
+        appendScriptHistoryLine(QString("// Result: imported %1 //").arg(QFileInfo(filePath).fileName()));
+    }
+    statusBar()->showMessage(QString("Imported %1").arg(QFileInfo(filePath).fileName()), 4000);
+    return true;
+}
+
+bool MainWindow::saveSceneToPath(const QString& filePath, bool logToScript)
+{
+    const QString targetPath = filePath.isEmpty() ? currentSceneFilePath_ : filePath;
+    if (targetPath.isEmpty()) {
+        statusBar()->showMessage("Save scene failed", 3000);
+        return false;
+    }
+
+    QString errorMessage;
+    if (!PhoenixSceneDocument::saveToFile(viewport_->scene(), targetPath, &errorMessage)) {
+        QMessageBox::warning(this, "Save Scene", errorMessage);
+        statusBar()->showMessage("Save scene failed", 3000);
+        return false;
+    }
+
+    currentSceneFilePath_ = targetPath;
+    updateWindowTitle();
+    if (logToScript) {
+        appendScriptHistoryLine(QString("file -save \"%1\";").arg(QDir::toNativeSeparators(currentSceneFilePath_)));
+        appendScriptHistoryLine(QString("// Result: saved %1 //").arg(QFileInfo(currentSceneFilePath_).fileName()));
+    }
+    statusBar()->showMessage(QString("Saved %1").arg(QFileInfo(currentSceneFilePath_).fileName()), 3000);
+    return true;
+}
+
+bool MainWindow::incrementAndSave()
+{
+    QFileInfo info(currentSceneFilePath_);
+    QString targetPath = currentSceneFilePath_;
+
+    if (targetPath.isEmpty()) {
+        targetPath = QDir::currentPath() + "/scene_001.phoenixscene";
+    } else {
+        const QString baseName = info.completeBaseName();
+        QRegularExpression suffixPattern("^(.*?)(?:_(\\d+))?$");
+        const QRegularExpressionMatch match = suffixPattern.match(baseName);
+        const QString stem = match.hasMatch() ? match.captured(1) : baseName;
+        const int version = match.hasMatch() && !match.captured(2).isEmpty() ? match.captured(2).toInt() + 1 : 1;
+        const QString nextName = QString("%1_%2.%3")
+                                     .arg(stem)
+                                     .arg(version, 3, 10, QChar('0'))
+                                     .arg(info.suffix().isEmpty() ? "phoenixscene" : info.suffix());
+        targetPath = info.dir().filePath(nextName);
+    }
+
+    currentSceneFilePath_ = targetPath;
+    return saveScene();
+}
+
+bool MainWindow::archiveScene()
+{
+    if (!saveScene()) {
+        return false;
+    }
+
+    QFileInfo info(currentSceneFilePath_);
+    const QString archiveDirPath = info.dir().filePath("archive");
+    QDir().mkpath(archiveDirPath);
+
+    const QString archiveName = QString("%1_%2.%3")
+                                    .arg(info.completeBaseName())
+                                    .arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"))
+                                    .arg(info.suffix());
+    const QString archivePath = QDir(archiveDirPath).filePath(archiveName);
+
+    QFile::remove(archivePath);
+    if (!QFile::copy(currentSceneFilePath_, archivePath)) {
+        QMessageBox::warning(this, "Archive Scene", "Failed to archive current scene file.");
+        statusBar()->showMessage("Archive scene failed", 3000);
+        return false;
+    }
+
+    statusBar()->showMessage(QString("Archived to %1").arg(QFileInfo(archivePath).fileName()), 3000);
+    appendScriptComment(QString("Archived scene to %1").arg(QDir::toNativeSeparators(archivePath)));
+    return true;
+}
+
+bool MainWindow::exportAll()
+{
+    const QString filePath = QFileDialog::getSaveFileName(
+        this,
+        "Export All",
+        "export_all.phoenixscene",
+        "Phoenix Scene (*.phoenixscene)");
+
+    if (filePath.isEmpty()) {
+        statusBar()->showMessage("Export cancelled", 1500);
+        return false;
+    }
+
+    QString errorMessage;
+    if (!PhoenixSceneDocument::saveToFile(viewport_->scene(), filePath, &errorMessage)) {
+        QMessageBox::warning(this, "Export All", errorMessage);
+        statusBar()->showMessage("Export failed", 3000);
+        return false;
+    }
+
+    statusBar()->showMessage(QString("Exported %1").arg(QFileInfo(filePath).fileName()), 3000);
+    appendScriptHistoryLine(QString("file -exportAll \"%1\";").arg(QDir::toNativeSeparators(filePath)));
+    appendScriptHistoryLine(QString("// Result: exported %1 //").arg(QFileInfo(filePath).fileName()));
+    return true;
+}
+
+bool MainWindow::exportSelection()
+{
+    if (selectedObjectId_ == 0) {
+        statusBar()->showMessage("No selection to export", 2000);
+        return false;
+    }
+
+    const QString filePath = QFileDialog::getSaveFileName(
+        this,
+        "Export Selection",
+        "export_selection.phoenixscene",
+        "Phoenix Scene (*.phoenixscene)");
+
+    if (filePath.isEmpty()) {
+        statusBar()->showMessage("Export selection cancelled", 1500);
+        return false;
+    }
+
+    const Scene exportScene = buildExportSceneForObject(selectedObjectId_);
+    QString errorMessage;
+    if (!PhoenixSceneDocument::saveToFile(exportScene, filePath, &errorMessage)) {
+        QMessageBox::warning(this, "Export Selection", errorMessage);
+        statusBar()->showMessage("Export selection failed", 3000);
+        return false;
+    }
+
+    statusBar()->showMessage(QString("Exported selection to %1").arg(QFileInfo(filePath).fileName()), 3000);
+    appendScriptHistoryLine(QString("file -exportSelected \"%1\";").arg(QDir::toNativeSeparators(filePath)));
+    appendScriptHistoryLine(QString("// Result: exported selection to %1 //").arg(QFileInfo(filePath).fileName()));
+    return true;
+}
+
+void MainWindow::savePreferences()
+{
+    QSettings settings("ProjectPhoenix", "PhoenixEditor");
+    settings.setValue("mainWindow/geometry", saveGeometry());
+    settings.setValue("mainWindow/state", saveState());
+    settings.setValue("animation/autoKeyEnabled", autoKeyEnabled_);
+    appendScriptComment("Saved Phoenix Editor preferences");
+    statusBar()->showMessage("Preferences saved", 2000);
+}
+
+void MainWindow::loadPreferences()
+{
+    QSettings settings("ProjectPhoenix", "PhoenixEditor");
+    const QByteArray geometry = settings.value("mainWindow/geometry").toByteArray();
+    if (!geometry.isEmpty()) {
+        restoreGeometry(geometry);
+    }
+
+    const QByteArray state = settings.value("mainWindow/state").toByteArray();
+    if (!state.isEmpty()) {
+        restoreState(state);
+    }
+
+    autoKeyEnabled_ = settings.value("animation/autoKeyEnabled", false).toBool();
+    if (viewport_ != nullptr) {
+        viewport_->setAutoKeyEnabled(autoKeyEnabled_);
+    }
+}
+
+void MainWindow::createPrimitiveFromPalette()
+{
+    if (polygonPrimitivesList_ == nullptr || polygonPrimitivesList_->currentItem() == nullptr) {
+        statusBar()->showMessage("Choose a primitive first", 1500);
         return;
     }
 
-    statusBar()->showMessage(QString("Imported: %1").arg(viewport_->lastImportMessage()), 4000);
+    const PrimitiveMeshFactory::Type type = primitiveTypeFromItem(polygonPrimitivesList_->currentItem());
+    if (!PrimitiveMeshFactory::isImplemented(type)) {
+        statusBar()->showMessage("This primitive is not implemented yet", 2000);
+        return;
+    }
+
+    const QString objectName = generateUniqueScriptName(primitivePrefix(type));
+    const SceneObject::Id objectId = viewport_->createPrimitive(type, objectName);
+    if (objectId == 0) {
+        statusBar()->showMessage("Primitive creation failed", 2000);
+        return;
+    }
+
+    refreshScenePanels();
+    selectObject(objectId, true);
+    logPrimitiveCreationToScriptEditor(type, objectName);
+
+    if (interactivePrimitiveCreationEnabled_) {
+        setTransformUiMode(TransformUiMode::Translate);
+        viewport_->frameObject(objectId);
+    }
+
+    if (exitPrimitiveToolOnCompletionEnabled_ && polygonPrimitivesDock_ != nullptr) {
+        polygonPrimitivesDock_->hide();
+    }
+
+    statusBar()->showMessage(QString("Created %1").arg(PrimitiveMeshFactory::displayName(type)), 2000);
+}
+
+void MainWindow::showScriptEditorWindow()
+{
+    if (scriptEditorDock_ == nullptr) {
+        return;
+    }
+
+    scriptEditorDock_->show();
+    scriptEditorDock_->raise();
+    appendScriptComment("Script Editor opened");
+}
+
+void MainWindow::executeScriptEditorAll()
+{
+    if (scriptInputTextEdit_ == nullptr) {
+        return;
+    }
+
+    const QStringList lines = scriptInputTextEdit_->toPlainText().split('\n');
+    for (QString line : lines) {
+        QString resultLine;
+        if (executeScriptCommand(line, &resultLine)) {
+            if (!resultLine.isEmpty()) {
+                appendScriptHistoryLine(resultLine);
+            }
+        }
+    }
+}
+
+void MainWindow::executeScriptEditorSelection()
+{
+    if (scriptInputTextEdit_ == nullptr) {
+        return;
+    }
+
+    QString selectedText = scriptInputTextEdit_->textCursor().selectedText();
+    selectedText.replace(QChar(0x2029), '\n');
+    const QStringList lines = selectedText.split('\n');
+    for (QString line : lines) {
+        QString resultLine;
+        if (executeScriptCommand(line, &resultLine)) {
+            if (!resultLine.isEmpty()) {
+                appendScriptHistoryLine(resultLine);
+            }
+        }
+    }
+}
+
+void MainWindow::clearScriptHistory()
+{
+    if (scriptHistoryTextEdit_ != nullptr) {
+        scriptHistoryTextEdit_->clear();
+        appendScriptComment("Script history cleared");
+    }
+}
+
+void MainWindow::appendScriptHistoryLine(const QString& line)
+{
+    if (scriptHistoryTextEdit_ == nullptr || line.trimmed().isEmpty()) {
+        return;
+    }
+
+    scriptHistoryTextEdit_->appendPlainText(line);
+    QTextCursor cursor = scriptHistoryTextEdit_->textCursor();
+    cursor.movePosition(QTextCursor::End);
+    scriptHistoryTextEdit_->setTextCursor(cursor);
+}
+
+void MainWindow::appendScriptComment(const QString& line)
+{
+    if (line.trimmed().isEmpty()) {
+        return;
+    }
+
+    appendScriptHistoryLine(QString("// %1 //").arg(line));
+}
+
+bool MainWindow::executeScriptCommand(QString commandLine, QString* resultLine)
+{
+    commandLine = commandLine.trimmed();
+    if (commandLine.isEmpty()) {
+        return false;
+    }
+
+    if (commandLine.startsWith("//")) {
+        appendScriptHistoryLine(commandLine);
+        return false;
+    }
+
+    appendScriptHistoryLine(commandLine);
+    ScriptCommandExecution execution;
+    const bool handled = scriptCommandRegistry_.execute(commandLine, createScriptCommandContext(), &execution);
+    if (resultLine != nullptr) {
+        *resultLine = execution.resultLine;
+    }
+    return handled;
+}
+
+ScriptCommandContext MainWindow::createScriptCommandContext()
+{
+    ScriptCommandContext context;
+    context.clearSelection = [this]() {
+        clearInspector();
+    };
+    context.selectObjectByName = [this](const QString& objectName) {
+        const std::uint64_t objectId = findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        selectObject(objectId, true);
+        return true;
+    };
+    context.createPrimitive = [this](PrimitiveMeshFactory::Type type) {
+        const QString objectName = generateUniqueScriptName(primitivePrefix(type));
+        const SceneObject::Id objectId = viewport_->createPrimitive(type, objectName);
+        if (objectId == 0) {
+            return QString();
+        }
+
+        refreshScenePanels();
+        selectObject(objectId, true);
+        return objectName;
+    };
+    context.renameObject = [this](const QString& sourceName, const QString& newName) {
+        const std::uint64_t objectId = findObjectIdByName(sourceName);
+        if (objectId == 0 || newName.trimmed().isEmpty()) {
+            return QString();
+        }
+
+        Scene updatedScene = viewport_->scene();
+        const QString uniqueName = generateUniqueObjectName(newName.trimmed(), objectId);
+        if (!updatedScene.setObjectName(objectId, uniqueName)) {
+            return QString();
+        }
+
+        viewport_->replaceScene(updatedScene);
+        refreshScenePanels();
+        selectObject(objectId, true);
+        return uniqueName;
+    };
+    context.duplicateObject = [this](const QString& sourceName) {
+        const std::uint64_t objectId = findObjectIdByName(sourceName);
+        if (objectId == 0) {
+            return QString();
+        }
+
+        Scene updatedScene = viewport_->scene();
+        const SceneObject* sourceObject = updatedScene.findObject(objectId);
+        if (sourceObject == nullptr) {
+            return QString();
+        }
+
+        const QString sourceObjectName = sourceObject->name();
+
+        const SceneObject::Id duplicateId = updatedScene.duplicateSubtree(objectId);
+        SceneObject* duplicateObject = updatedScene.findObject(duplicateId);
+        if (duplicateObject == nullptr) {
+            return QString();
+        }
+
+        const QString duplicateName = generateUniqueObjectName(QString("%1Copy").arg(sourceObjectName));
+        duplicateObject->setName(duplicateName);
+        updatedScene.rebuildWorldData();
+
+        viewport_->replaceScene(updatedScene);
+        refreshScenePanels();
+        selectObject(duplicateId, true);
+        return duplicateName;
+    };
+    context.groupObject = [this](const QString& sourceName) {
+        const std::uint64_t objectId = findObjectIdByName(sourceName);
+        if (objectId == 0) {
+            return QString();
+        }
+
+        Scene updatedScene = viewport_->scene();
+        const SceneObject* sourceObject = updatedScene.findObject(objectId);
+        if (sourceObject == nullptr) {
+            return QString();
+        }
+
+        const SceneObject::Id sourceParentId = sourceObject->parentId();
+
+        const QString groupName = generateUniqueObjectName("group");
+        const SceneObject::Id groupId = updatedScene.createObject(groupName);
+        SceneObject* groupObject = updatedScene.findObject(groupId);
+        if (groupObject == nullptr) {
+            return QString();
+        }
+
+        groupObject->setAuthoredTransform(Transform());
+        groupObject->setLocalTransform(Transform());
+        groupObject->setVisible(true);
+        if (!updatedScene.reparentObject(groupId, sourceParentId)) {
+            return QString();
+        }
+        if (!updatedScene.reparentObject(objectId, groupId)) {
+            return QString();
+        }
+
+        viewport_->replaceScene(updatedScene);
+        refreshScenePanels();
+        selectObject(groupId, true);
+        return groupName;
+    };
+    context.deleteObject = [this](const QString& sourceName) {
+        const std::uint64_t objectId = findObjectIdByName(sourceName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        Scene updatedScene = viewport_->scene();
+        if (!updatedScene.removeObject(objectId)) {
+            return false;
+        }
+
+        viewport_->replaceScene(updatedScene);
+        refreshScenePanels();
+        clearInspector();
+        return true;
+    };
+    context.setAttribute = [this](const QString& objectName, const QString& attributeName, const QList<double>& values) {
+        const std::uint64_t objectId = findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        const SceneObject* object = viewport_->scene().findObject(objectId);
+        if (object == nullptr) {
+            return false;
+        }
+
+        if (attributeName == "visibility") {
+            if (values.size() != 1) {
+                return false;
+            }
+
+            const bool visible = values.first() != 0.0;
+            if (!viewport_->setObjectVisibility(objectId, visible)) {
+                return false;
+            }
+
+            if (objectId == selectedObjectId_) {
+                updateChannelBox(objectId);
+                const SceneObject* updatedObject = viewport_->scene().findObject(objectId);
+                const bool canFrame = updatedObject != nullptr && updatedObject->isVisible() && updatedObject->worldBounds().isValid();
+                frameSelectedButton_->setEnabled(canFrame);
+                frameSelectedAction_->setEnabled(canFrame);
+            }
+
+            return true;
+        }
+
+        if (values.size() != 3) {
+            return false;
+        }
+
+        Transform transform = object->localTransform();
+        const QVector3D vectorValue(
+            static_cast<float>(values.at(0)),
+            static_cast<float>(values.at(1)),
+            static_cast<float>(values.at(2)));
+
+        if (attributeName == "translate") {
+            transform.translation = vectorValue;
+        } else if (attributeName == "rotate") {
+            transform.rotation = QQuaternion::fromEulerAngles(vectorValue);
+        } else if (attributeName == "scale") {
+            transform.scale = vectorValue;
+        } else {
+            return false;
+        }
+
+        if (!viewport_->setObjectLocalTransform(objectId, transform)) {
+            return false;
+        }
+
+        if (objectId == selectedObjectId_) {
+            updateChannelBox(objectId);
+        }
+        return true;
+    };
+    context.newScene = [this]() {
+        viewport_->clearScene();
+        currentSceneFilePath_.clear();
+        refreshScenePanels();
+        viewport_->resetCamera();
+        updateWindowTitle();
+    };
+    context.openSceneFile = [this](const QString& filePath) {
+        return openSceneFromPath(filePath, false);
+    };
+    context.importSceneFile = [this](const QString& filePath) {
+        return importFbxFromPath(filePath, false);
+    };
+    context.saveSceneFile = [this](const QString& filePath) {
+        return saveSceneToPath(filePath, false);
+    };
+    context.frameView = [this](const QString& targetName) {
+        if (targetName.trimmed().isEmpty()) {
+            viewport_->frameScene();
+            return true;
+        }
+
+        const std::uint64_t objectId = findObjectIdByName(targetName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        viewport_->frameObject(objectId);
+        return true;
+    };
+    context.resetCamera = [this]() {
+        viewport_->resetCamera();
+    };
+    context.activateTool = [this](const QString& toolName) {
+        if (toolName == "MoveSuperContext") {
+            translateAction_->setChecked(true);
+            rotateAction_->setChecked(false);
+            scaleAction_->setChecked(false);
+            viewport_->setTransformMode(ViewportWidget::TransformMode::Translate);
+            return true;
+        }
+
+        if (toolName == "RotateSuperContext") {
+            translateAction_->setChecked(false);
+            rotateAction_->setChecked(true);
+            scaleAction_->setChecked(false);
+            viewport_->setTransformMode(ViewportWidget::TransformMode::Rotate);
+            return true;
+        }
+
+        if (toolName == "ScaleSuperContext") {
+            translateAction_->setChecked(false);
+            rotateAction_->setChecked(false);
+            scaleAction_->setChecked(true);
+            viewport_->setTransformMode(ViewportWidget::TransformMode::Scale);
+            return true;
+        }
+
+        return false;
+    };
+    context.setCurrentFrame = [this](int frame) {
+        setCurrentFrame(frame, false);
+    };
+    context.setKeyframe = [this](const QString& objectName, int frame) {
+        const std::uint64_t objectId = findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        selectObject(objectId, true);
+        if (frame >= 0) {
+            setCurrentFrame(frame, false);
+        }
+
+        return viewport_->setObjectKeyframe(objectId, currentFrame_);
+    };
+    context.deleteKeyframe = [this](const QString& objectName, int frame) {
+        const std::uint64_t objectId = findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        selectObject(objectId, true);
+        if (frame >= 0) {
+            setCurrentFrame(frame, false);
+        }
+
+        return viewport_->removeObjectKeyframe(objectId, currentFrame_);
+    };
+    context.setAutoKey = [this](bool enabled) {
+        setAutoKeyEnabled(enabled, false);
+    };
+    context.setPlaybackRange = [this](int startFrame, int endFrame) {
+        setPlaybackRange(startFrame, endFrame, false);
+    };
+    context.setPlaybackState = [this](bool playing) {
+        if (playbackTimer_ == nullptr || playPauseButton_ == nullptr) {
+            return;
+        }
+
+        if (playing) {
+            playbackTimer_->start();
+            playPauseButton_->setText("||");
+        } else {
+            playbackTimer_->stop();
+            playPauseButton_->setText(">");
+        }
+    };
+    return context;
+}
+
+std::uint64_t MainWindow::findObjectIdByName(const QString& objectName) const
+{
+    for (std::uint64_t objectId : viewport_->scene().allObjectIds()) {
+        const SceneObject* object = viewport_->scene().findObject(objectId);
+        if (object != nullptr && objectDisplayName(*object) == objectName) {
+            return objectId;
+        }
+    }
+
+    return 0;
+}
+
+QString MainWindow::generateUniqueScriptName(const QString& prefix) const
+{
+    int suffix = 1;
+    while (findObjectIdByName(QString("%1%2").arg(prefix).arg(suffix)) != 0) {
+        ++suffix;
+    }
+    return QString("%1%2").arg(prefix).arg(suffix);
+}
+
+QString MainWindow::generateUniqueObjectName(const QString& baseName, std::uint64_t ignoreObjectId) const
+{
+    const auto nameInUse = [this, ignoreObjectId](const QString& candidate) {
+        for (std::uint64_t objectId : viewport_->scene().allObjectIds()) {
+            if (objectId == ignoreObjectId) {
+                continue;
+            }
+
+            const SceneObject* object = viewport_->scene().findObject(objectId);
+            if (object != nullptr && objectDisplayName(*object) == candidate) {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    const QString trimmedBaseName = baseName.trimmed().isEmpty() ? QString("object") : baseName.trimmed();
+    if (!nameInUse(trimmedBaseName)) {
+        return trimmedBaseName;
+    }
+
+    int suffix = 1;
+    while (nameInUse(QString("%1%2").arg(trimmedBaseName).arg(suffix))) {
+        ++suffix;
+    }
+
+    return QString("%1%2").arg(trimmedBaseName).arg(suffix);
+}
+
+void MainWindow::logPrimitiveCreationToScriptEditor(PrimitiveMeshFactory::Type type, const QString& objectName)
+{
+    appendScriptHistoryLine(QString("select -cl ;"));
+    appendScriptHistoryLine(QString("%1 -ch 1;").arg(mayaCommandName(type)));
+    appendScriptHistoryLine(QString("// Result: %1 %1Shape //").arg(objectName));
+}
+
+void MainWindow::logSelectionToScriptEditor(std::uint64_t objectId)
+{
+    if (objectId == 0) {
+        appendScriptHistoryLine("select -cl;");
+        appendScriptHistoryLine("// Result: selection cleared //");
+        return;
+    }
+
+    const SceneObject* object = viewport_->scene().findObject(objectId);
+    if (object == nullptr) {
+        return;
+    }
+
+    appendScriptHistoryLine(QString("select -r %1;").arg(objectDisplayName(*object)));
+    appendScriptHistoryLine(QString("// Result: %1 //").arg(objectDisplayName(*object)));
+}
+
+void MainWindow::logChannelBoxChangeToScriptEditor(const Transform& transform)
+{
+    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    if (object == nullptr) {
+        return;
+    }
+
+    const QString objectName = objectDisplayName(*object);
+    const QVector3D eulerDegrees = transform.rotation.toEulerAngles();
+    appendScriptHistoryLine(QString("setAttr \"%1.translate\" %2 %3 %4;")
+                                .arg(objectName)
+                                .arg(transform.translation.x(), 0, 'f', 3)
+                                .arg(transform.translation.y(), 0, 'f', 3)
+                                .arg(transform.translation.z(), 0, 'f', 3));
+    appendScriptHistoryLine(QString("setAttr \"%1.rotate\" %2 %3 %4;")
+                                .arg(objectName)
+                                .arg(eulerDegrees.x(), 0, 'f', 3)
+                                .arg(eulerDegrees.y(), 0, 'f', 3)
+                                .arg(eulerDegrees.z(), 0, 'f', 3));
+    appendScriptHistoryLine(QString("setAttr \"%1.scale\" %2 %3 %4;")
+                                .arg(objectName)
+                                .arg(transform.scale.x(), 0, 'f', 3)
+                                .arg(transform.scale.y(), 0, 'f', 3)
+                                .arg(transform.scale.z(), 0, 'f', 3));
+    appendScriptHistoryLine(QString("// Result: updated %1 transform //").arg(objectName));
+}
+
+void MainWindow::logVisibilityChangeToScriptEditor(bool visible)
+{
+    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    if (object == nullptr) {
+        return;
+    }
+
+    const QString objectName = objectDisplayName(*object);
+    appendScriptHistoryLine(QString("setAttr \"%1.visibility\" %2;").arg(objectName).arg(visible ? 1 : 0));
+    appendScriptHistoryLine(QString("// Result: %1 visibility %2 //").arg(objectName, visible ? "on" : "off"));
+}
+
+void MainWindow::refreshScenePanels()
+{
+    populateOutliner();
+    clearInspector();
+}
+
+void MainWindow::populateOutliner()
+{
+    outlinerTree_->clear();
+
+    const Scene& scene = viewport_->scene();
+    const QVector<SceneObject::Id> rootIds = scene.rootObjectIds();
+    for (SceneObject::Id rootId : rootIds) {
+        populateOutlinerItem(nullptr, rootId);
+    }
+
+    outlinerTree_->expandToDepth(1);
+
+    if (outlinerTree_->topLevelItemCount() == 0) {
+        QTreeWidgetItem* emptyItem = new QTreeWidgetItem();
+        emptyItem->setText(0, "No scene loaded");
+        outlinerTree_->addTopLevelItem(emptyItem);
+    }
+}
+
+void MainWindow::populateOutlinerItem(QTreeWidgetItem* parentItem, std::uint64_t objectId)
+{
+    const SceneObject* object = viewport_->scene().findObject(objectId);
+    if (object == nullptr) {
+        return;
+    }
+
+    if (shouldPromoteOutlinerNode(objectId)) {
+        for (SceneObject::Id childId : object->childIds()) {
+            populateOutlinerItem(parentItem, childId);
+        }
+        return;
+    }
+
+    QTreeWidgetItem* item = new QTreeWidgetItem();
+    item->setText(0, objectDisplayName(*object));
+    item->setData(0, Qt::UserRole, QVariant::fromValue<qulonglong>(objectId));
+
+    if (parentItem == nullptr) {
+        outlinerTree_->addTopLevelItem(item);
+    } else {
+        parentItem->addChild(item);
+    }
+
+    for (SceneObject::Id childId : object->childIds()) {
+        populateOutlinerItem(item, childId);
+    }
+}
+
+bool MainWindow::shouldPromoteOutlinerNode(std::uint64_t objectId) const
+{
+    const SceneObject* object = viewport_->scene().findObject(objectId);
+    if (object == nullptr) {
+        return false;
+    }
+
+    return object->name() == "RootNode"
+        && object->meshHandles().isEmpty()
+        && object->childIds().size() == 1;
+}
+
+void MainWindow::clearInspector()
+{
+    selectedObjectId_ = 0;
+    viewport_->setSelectedObject(0);
+    syncOutlinerSelection(0);
+    const bool hasScene = !viewport_->scene().isEmpty();
+    if (hasScene) {
+        inspectorEmptyStateLabel_->setText("No selection.");
+    } else {
+        inspectorEmptyStateLabel_->setText("No selection. Import an FBX to inspect the scene.");
+    }
+
+    updatingChannelBox_ = true;
+    channelObjectNameLabel_->setText("-");
+    translateXSpinBox_->setValue(0.0);
+    translateYSpinBox_->setValue(0.0);
+    translateZSpinBox_->setValue(0.0);
+    rotateXSpinBox_->setValue(0.0);
+    rotateYSpinBox_->setValue(0.0);
+    rotateZSpinBox_->setValue(0.0);
+    scaleXSpinBox_->setValue(1.0);
+    scaleYSpinBox_->setValue(1.0);
+    scaleZSpinBox_->setValue(1.0);
+    visibilityCheckBox_->setChecked(true);
+    visibilityCheckBox_->setText("on");
+    updatingChannelBox_ = false;
+    setChannelBoxEnabled(false);
+    if (setKeyButton_ != nullptr) {
+        setKeyButton_->setEnabled(false);
+    }
+    if (deleteKeyButton_ != nullptr) {
+        deleteKeyButton_->setEnabled(false);
+    }
+    refreshAnimationTimelineUi();
+    frameSelectedButton_->setEnabled(false);
+    frameSelectedAction_->setEnabled(false);
+}
+
+void MainWindow::updateInspector(std::uint64_t objectId)
+{
+    const SceneObject* object = viewport_->scene().findObject(objectId);
+    if (object == nullptr) {
+        clearInspector();
+        return;
+    }
+
+    selectedObjectId_ = objectId;
+    viewport_->setSelectedObject(objectId);
+    inspectorEmptyStateLabel_->setText("Selected object channel box.");
+    updateChannelBox(objectId);
+
+    const bool canFrame = object->isVisible() && object->worldBounds().isValid();
+    if (setKeyButton_ != nullptr) {
+        setKeyButton_->setEnabled(true);
+    }
+    if (deleteKeyButton_ != nullptr) {
+        deleteKeyButton_->setEnabled(object->hasTransformKeyframe(currentFrame_));
+    }
+    refreshAnimationTimelineUi();
+    frameSelectedButton_->setEnabled(canFrame);
+    frameSelectedAction_->setEnabled(canFrame);
+}
+
+void MainWindow::handleOutlinerSelectionChanged()
+{
+    const QList<QTreeWidgetItem*> selectedItems = outlinerTree_->selectedItems();
+    if (selectedItems.isEmpty()) {
+        clearInspector();
+        logSelectionToScriptEditor(0);
+        return;
+    }
+
+    const QVariant objectIdData = selectedItems.first()->data(0, Qt::UserRole);
+    if (!objectIdData.isValid()) {
+        clearInspector();
+        return;
+    }
+
+    const std::uint64_t objectId = objectIdData.toULongLong();
+    selectObject(objectId, false);
+    logSelectionToScriptEditor(objectId);
+    statusBar()->showMessage(QString("Selected: %1").arg(selectedItems.first()->text(0)), 2000);
+}
+
+void MainWindow::frameSelectedObject()
+{
+    if (selectedObjectId_ == 0) {
+        return;
+    }
+
+    viewport_->frameObject(selectedObjectId_);
+    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    if (object != nullptr) {
+        appendScriptHistoryLine(QString("viewFit %1;").arg(objectDisplayName(*object)));
+        appendScriptHistoryLine(QString("// Result: framed %1 //").arg(objectDisplayName(*object)));
+    }
+    statusBar()->showMessage("Selected object framed", 2000);
+}
+
+void MainWindow::selectObject(std::uint64_t objectId, bool syncOutliner)
+{
+    if (objectId == 0) {
+        clearInspector();
+        return;
+    }
+
+    if (syncOutliner) {
+        syncOutlinerSelection(objectId);
+    }
+
+    updateInspector(objectId);
+}
+
+void MainWindow::syncOutlinerSelection(std::uint64_t objectId)
+{
+    QSignalBlocker blocker(outlinerTree_);
+
+    if (objectId == 0) {
+        outlinerTree_->clearSelection();
+        return;
+    }
+
+    for (QTreeWidgetItemIterator it(outlinerTree_); *it != nullptr; ++it) {
+        QTreeWidgetItem* item = *it;
+        if (item->data(0, Qt::UserRole).toULongLong() == objectId) {
+            outlinerTree_->setCurrentItem(item);
+            item->setSelected(true);
+            return;
+        }
+    }
+
+    outlinerTree_->clearSelection();
+}
+
+void MainWindow::setTransformUiMode(TransformUiMode mode)
+{
+    translateAction_->setChecked(mode == TransformUiMode::Translate);
+    rotateAction_->setChecked(mode == TransformUiMode::Rotate);
+    scaleAction_->setChecked(mode == TransformUiMode::Scale);
+
+    if (mode == TransformUiMode::Translate) {
+        viewport_->setTransformMode(ViewportWidget::TransformMode::Translate);
+        appendScriptHistoryLine("setToolTo MoveSuperContext;");
+        appendScriptHistoryLine("// Result: move tool //");
+        statusBar()->showMessage("Transform mode: Translate", 1500);
+    } else if (mode == TransformUiMode::Rotate) {
+        viewport_->setTransformMode(ViewportWidget::TransformMode::Rotate);
+        appendScriptHistoryLine("setToolTo RotateSuperContext;");
+        appendScriptHistoryLine("// Result: rotate tool //");
+        statusBar()->showMessage("Transform mode: Rotate", 1500);
+    } else {
+        viewport_->setTransformMode(ViewportWidget::TransformMode::Scale);
+        appendScriptHistoryLine("setToolTo ScaleSuperContext;");
+        appendScriptHistoryLine("// Result: scale tool //");
+        statusBar()->showMessage("Transform mode: Scale", 1500);
+    }
+}
+
+void MainWindow::setAxisUiOrientation(AxisUiOrientation orientation)
+{
+    worldAxisAction_->setChecked(orientation == AxisUiOrientation::World);
+    localAxisAction_->setChecked(orientation == AxisUiOrientation::Local);
+
+    if (orientation == AxisUiOrientation::World) {
+        viewport_->setAxisOrientation(ViewportWidget::AxisOrientation::World);
+        appendScriptComment("Axis orientation set to World");
+        statusBar()->showMessage("Axis orientation: World", 1500);
+    } else {
+        viewport_->setAxisOrientation(ViewportWidget::AxisOrientation::Local);
+        appendScriptComment("Axis orientation set to Local");
+        statusBar()->showMessage("Axis orientation: Local", 1500);
+    }
+}
+
+void MainWindow::restoreDefaultWorkspaceLayout()
+{
+    if (viewportDock_ == nullptr || outlinerDock_ == nullptr || inspectorDock_ == nullptr || timeSliderDock_ == nullptr) {
+        return;
+    }
+
+    viewportDock_->setFloating(false);
+    outlinerDock_->setFloating(false);
+    inspectorDock_->setFloating(false);
+    timeSliderDock_->setFloating(false);
+
+    addDockWidget(Qt::LeftDockWidgetArea, outlinerDock_);
+    splitDockWidget(outlinerDock_, viewportDock_, Qt::Horizontal);
+    splitDockWidget(viewportDock_, inspectorDock_, Qt::Horizontal);
+    addDockWidget(Qt::BottomDockWidgetArea, timeSliderDock_);
+    resizeDocks({ outlinerDock_, viewportDock_, inspectorDock_ }, { 280, 920, 320 }, Qt::Horizontal);
+    resizeDocks({ timeSliderDock_ }, { 150 }, Qt::Vertical);
+
+    outlinerDock_->show();
+    viewportDock_->show();
+    inspectorDock_->show();
+    timeSliderDock_->show();
+    viewportDock_->raise();
+    appendScriptComment("Workspace layout restored");
+    statusBar()->showMessage("Workspace layout restored", 2000);
+}
+
+void MainWindow::showPolygonPrimitivesWindow()
+{
+    if (polygonPrimitivesDock_ == nullptr) {
+        return;
+    }
+
+    polygonPrimitivesDock_->show();
+    polygonPrimitivesDock_->raise();
+    appendScriptComment("Polygon Primitives window opened");
+}
+
+void MainWindow::updateWindowTitle()
+{
+    const QString sceneName = currentSceneFilePath_.isEmpty()
+        ? "untitled"
+        : QFileInfo(currentSceneFilePath_).fileName();
+    setWindowTitle(QString("%1 - Phoenix Editor Beta").arg(sceneName));
+}
+
+void MainWindow::setCurrentFrame(int frame, bool logToScript)
+{
+    const int clampedFrame = qBound(playbackStartFrame_, frame, playbackEndFrame_);
+    currentFrame_ = clampedFrame;
+    viewport_->setCurrentFrame(clampedFrame);
+
+    updatingTimeSlider_ = true;
+    if (timeSlider_ != nullptr) {
+        timeSlider_->setValue(clampedFrame);
+    }
+    if (currentFrameSpinBox_ != nullptr) {
+        currentFrameSpinBox_->setValue(clampedFrame);
+    }
+    updatingTimeSlider_ = false;
+
+    refreshAnimationTimelineUi();
+
+    if (selectedObjectId_ != 0 && viewport_->scene().contains(selectedObjectId_)) {
+        updateChannelBox(selectedObjectId_);
+        const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+        const bool canFrame = object != nullptr && object->isVisible() && object->worldBounds().isValid();
+        frameSelectedButton_->setEnabled(canFrame);
+        frameSelectedAction_->setEnabled(canFrame);
+    }
+
+    if (logToScript) {
+        appendScriptHistoryLine(QString("currentTime %1;").arg(currentFrame_));
+        appendScriptHistoryLine(QString("// Result: current frame %1 //").arg(currentFrame_));
+    }
+
+    statusBar()->showMessage(QString("Current frame: %1").arg(currentFrame_), 800);
+}
+
+void MainWindow::setKeyForSelection(bool logToScript)
+{
+    if (selectedObjectId_ == 0) {
+        statusBar()->showMessage("Select an object to key", 1500);
+        return;
+    }
+
+    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    if (object == nullptr) {
+        statusBar()->showMessage("Selected object is no longer available", 1500);
+        return;
+    }
+
+    if (!viewport_->setObjectKeyframe(selectedObjectId_, currentFrame_)) {
+        statusBar()->showMessage("Set key failed", 1500);
+        return;
+    }
+
+    refreshAnimationTimelineUi();
+    updateChannelBox(selectedObjectId_);
+
+    if (logToScript) {
+        appendScriptHistoryLine(QString("setKeyframe %1 -t %2;").arg(objectDisplayName(*object)).arg(currentFrame_));
+        appendScriptHistoryLine(QString("// Result: key set on %1 at frame %2 //").arg(objectDisplayName(*object)).arg(currentFrame_));
+    }
+
+    statusBar()->showMessage(QString("Key set at frame %1").arg(currentFrame_), 1500);
+}
+
+void MainWindow::deleteKeyForSelection(bool logToScript)
+{
+    if (selectedObjectId_ == 0) {
+        statusBar()->showMessage("Select an object to delete a key", 1500);
+        return;
+    }
+
+    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    if (object == nullptr) {
+        statusBar()->showMessage("Selected object is no longer available", 1500);
+        return;
+    }
+
+    if (!object->hasTransformKeyframe(currentFrame_)) {
+        statusBar()->showMessage(QString("No key at frame %1").arg(currentFrame_), 1500);
+        return;
+    }
+
+    const QString objectName = objectDisplayName(*object);
+    if (!viewport_->removeObjectKeyframe(selectedObjectId_, currentFrame_)) {
+        statusBar()->showMessage("Delete key failed", 1500);
+        return;
+    }
+
+    refreshAnimationTimelineUi();
+    updateChannelBox(selectedObjectId_);
+
+    if (logToScript) {
+        appendScriptHistoryLine(QString("cutKey %1 -t %2;").arg(objectName).arg(currentFrame_));
+        appendScriptHistoryLine(QString("// Result: deleted key on %1 at frame %2 //").arg(objectName).arg(currentFrame_));
+    }
+
+    statusBar()->showMessage(QString("Deleted key at frame %1").arg(currentFrame_), 1500);
+}
+
+void MainWindow::setAutoKeyEnabled(bool enabled, bool logToScript)
+{
+    autoKeyEnabled_ = enabled;
+    viewport_->setAutoKeyEnabled(enabled);
+    refreshAnimationTimelineUi();
+
+    if (logToScript) {
+        appendScriptHistoryLine(QString("autoKeyframe -state %1;").arg(enabled ? "on" : "off"));
+        appendScriptHistoryLine(QString("// Result: auto key %1 //").arg(enabled ? "on" : "off"));
+    }
+
+    statusBar()->showMessage(enabled ? "Auto Key enabled" : "Auto Key disabled", 1500);
+}
+
+void MainWindow::setPlaybackRange(int startFrame, int endFrame, bool logToScript)
+{
+    if (startFrame > endFrame) {
+        std::swap(startFrame, endFrame);
+    }
+
+    playbackStartFrame_ = startFrame;
+    playbackEndFrame_ = endFrame;
+
+    updatingTimeSlider_ = true;
+    if (playbackStartSpinBox_ != nullptr) {
+        playbackStartSpinBox_->setValue(playbackStartFrame_);
+    }
+    if (playbackEndSpinBox_ != nullptr) {
+        playbackEndSpinBox_->setValue(playbackEndFrame_);
+    }
+    if (timeSlider_ != nullptr) {
+        timeSlider_->setRange(playbackStartFrame_, playbackEndFrame_);
+    }
+    if (currentFrameSpinBox_ != nullptr) {
+        currentFrameSpinBox_->setRange(playbackStartFrame_, playbackEndFrame_);
+    }
+    updatingTimeSlider_ = false;
+
+    if (logToScript) {
+        appendScriptHistoryLine(QString("playbackOptions -min %1 -max %2;").arg(playbackStartFrame_).arg(playbackEndFrame_));
+        appendScriptHistoryLine(QString("// Result: playback range %1 to %2 //").arg(playbackStartFrame_).arg(playbackEndFrame_));
+    }
+
+    setCurrentFrame(currentFrame_, logToScript);
+}
+
+void MainWindow::stepFrame(int delta)
+{
+    setCurrentFrame(currentFrame_ + delta);
+}
+
+void MainWindow::togglePlayback()
+{
+    if (playbackTimer_ == nullptr || playPauseButton_ == nullptr) {
+        return;
+    }
+
+    if (playbackTimer_->isActive()) {
+        playbackTimer_->stop();
+        playPauseButton_->setText(">");
+        appendScriptHistoryLine("play -state off;");
+        appendScriptHistoryLine("// Result: playback stopped //");
+        statusBar()->showMessage("Playback stopped", 1000);
+    } else {
+        playbackTimer_->start();
+        playPauseButton_->setText("||");
+        appendScriptHistoryLine("play -state on;");
+        appendScriptHistoryLine("// Result: playback started //");
+        statusBar()->showMessage("Playback started", 1000);
+    }
+}
+
+void MainWindow::advancePlayback()
+{
+    const int nextFrame = currentFrame_ >= playbackEndFrame_ ? playbackStartFrame_ : currentFrame_ + 1;
+    setCurrentFrame(nextFrame, false);
+}
+
+Scene MainWindow::buildExportSceneForObject(std::uint64_t objectId) const
+{
+    Scene exportScene;
+    copyObjectSubtreeToScene(viewport_->scene(), objectId, exportScene, 0);
+    exportScene.rebuildWorldData();
+    return exportScene;
+}
+
+std::uint64_t MainWindow::copyObjectSubtreeToScene(const Scene& sourceScene, std::uint64_t sourceId, Scene& targetScene, std::uint64_t targetParentId) const
+{
+    const SceneObject* sourceObject = sourceScene.findObject(sourceId);
+    if (sourceObject == nullptr) {
+        return 0;
+    }
+
+    const SceneObject::Id newId = targetScene.createObject(sourceObject->name());
+    SceneObject* targetObject = targetScene.findObject(newId);
+    if (targetObject == nullptr) {
+        return 0;
+    }
+
+    targetObject->setParentId(targetParentId);
+    targetObject->setVisible(sourceObject->isVisible());
+    targetObject->setAuthoredTransform(sourceObject->authoredTransform());
+    targetObject->setLocalTransform(sourceObject->localTransform());
+    targetObject->setTransformKeyframes(sourceObject->transformKeyframes());
+    targetObject->setLocalBounds(sourceObject->localBounds());
+
+    for (int meshHandle : sourceObject->meshHandles()) {
+        const MeshData* mesh = sourceScene.findMesh(meshHandle);
+        if (mesh == nullptr) {
+            continue;
+        }
+
+        targetObject->addMeshHandle(targetScene.addMesh(*mesh));
+    }
+
+    for (std::uint64_t childId : sourceObject->childIds()) {
+        const std::uint64_t newChildId = copyObjectSubtreeToScene(sourceScene, childId, targetScene, newId);
+        if (newChildId != 0) {
+            targetObject->addChildId(newChildId);
+        }
+    }
+
+    return newId;
+}
+
+PrimitiveMeshFactory::Type MainWindow::primitiveTypeFromItem(const QListWidgetItem* item) const
+{
+    if (item == nullptr) {
+        return PrimitiveMeshFactory::Type::Cube;
+    }
+
+    return static_cast<PrimitiveMeshFactory::Type>(item->data(kPrimitiveTypeRole).toInt());
+}
+
+void MainWindow::updateChannelBox(std::uint64_t objectId)
+{
+    const SceneObject* object = viewport_->scene().findObject(objectId);
+    if (object == nullptr) {
+        return;
+    }
+
+    const Transform& transform = object->localTransform();
+    const QVector3D eulerDegrees = transform.rotation.toEulerAngles();
+
+    updatingChannelBox_ = true;
+    channelObjectNameLabel_->setText(objectDisplayName(*object));
+    translateXSpinBox_->setValue(transform.translation.x());
+    translateYSpinBox_->setValue(transform.translation.y());
+    translateZSpinBox_->setValue(transform.translation.z());
+    rotateXSpinBox_->setValue(eulerDegrees.x());
+    rotateYSpinBox_->setValue(eulerDegrees.y());
+    rotateZSpinBox_->setValue(eulerDegrees.z());
+    scaleXSpinBox_->setValue(transform.scale.x());
+    scaleYSpinBox_->setValue(transform.scale.y());
+    scaleZSpinBox_->setValue(transform.scale.z());
+    visibilityCheckBox_->setChecked(object->isVisible());
+    visibilityCheckBox_->setText(object->isVisible() ? "on" : "off");
+    updatingChannelBox_ = false;
+    setChannelBoxEnabled(true);
+    refreshAnimationTimelineUi();
+}
+
+void MainWindow::refreshAnimationTimelineUi()
+{
+    QVector<int> keyframes;
+    bool hasSelection = false;
+    bool currentFrameKeyed = false;
+    QString objectName = "No selection";
+
+    if (selectedObjectId_ != 0) {
+        const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+        if (object != nullptr) {
+            hasSelection = true;
+            objectName = objectDisplayName(*object);
+            const TransformKeyframeTrack& track = object->transformKeyframes();
+            keyframes.reserve(track.size());
+            for (const TransformKeyframe& keyframe : track) {
+                keyframes.append(keyframe.frame);
+                if (keyframe.frame == currentFrame_) {
+                    currentFrameKeyed = true;
+                }
+            }
+        }
+    }
+
+    if (keyframeTimelineWidget_ != nullptr) {
+        keyframeTimelineWidget_->setFrameRange(playbackStartFrame_, playbackEndFrame_);
+        keyframeTimelineWidget_->setCurrentFrame(currentFrame_);
+        keyframeTimelineWidget_->setKeyframes(keyframes);
+        keyframeTimelineWidget_->setCurrentFrameKeyed(currentFrameKeyed);
+    }
+
+    if (setKeyButton_ != nullptr) {
+        setKeyButton_->setText(currentFrameKeyed ? "Key Selected" : "Key Selected");
+        setKeyButton_->setStyleSheet(currentFrameKeyed
+                ? "QPushButton { background-color: #b86d1f; color: white; font-weight: 600; }"
+                : "QPushButton { background-color: #4a4a4a; color: white; }");
+        if (!hasSelection) {
+            setKeyButton_->setText("Key Selected");
+            setKeyButton_->setStyleSheet(QString());
+        }
+    }
+
+    if (deleteKeyButton_ != nullptr) {
+        deleteKeyButton_->setEnabled(hasSelection && currentFrameKeyed);
+        deleteKeyButton_->setStyleSheet(currentFrameKeyed
+                ? "QPushButton { background-color: #565656; color: white; }"
+                : QString());
+    }
+
+    if (autoKeyButton_ != nullptr) {
+        if (autoKeyButton_->isChecked() != autoKeyEnabled_) {
+            autoKeyButton_->setChecked(autoKeyEnabled_);
+        }
+        autoKeyButton_->setStyleSheet(autoKeyEnabled_
+                ? "QPushButton { background-color: #8f2424; color: white; font-weight: 600; }"
+                : QString());
+    }
+
+    if (timelineStatusLabel_ != nullptr) {
+        if (!hasSelection) {
+            timelineStatusLabel_->setText(autoKeyEnabled_ ? "No selection | Auto Key on" : "No selection");
+            timelineStatusLabel_->setStyleSheet("color: #bdbdbd;");
+        } else if (currentFrameKeyed) {
+            timelineStatusLabel_->setText(QString("%1 | %2 keys | frame %3 keyed%4")
+                    .arg(objectName)
+                    .arg(keyframes.size())
+                    .arg(currentFrame_)
+                    .arg(autoKeyEnabled_ ? " | Auto Key on" : ""));
+            timelineStatusLabel_->setStyleSheet("color: #ffb040; font-weight: 600;");
+        } else if (!keyframes.isEmpty()) {
+            timelineStatusLabel_->setText(QString("%1 | %2 keys | frame %3 has no key%4")
+                    .arg(objectName)
+                    .arg(keyframes.size())
+                    .arg(currentFrame_)
+                    .arg(autoKeyEnabled_ ? " | Auto Key on" : ""));
+            timelineStatusLabel_->setStyleSheet("color: #9fdcff;");
+        } else {
+            timelineStatusLabel_->setText(QString("%1 | no keys yet%2")
+                    .arg(objectName)
+                    .arg(autoKeyEnabled_ ? " | Auto Key on" : ""));
+            timelineStatusLabel_->setStyleSheet("color: #bdbdbd;");
+        }
+    }
+}
+
+void MainWindow::setChannelBoxEnabled(bool enabled)
+{
+    inspectorDetailsWidget_->setEnabled(enabled);
+}
+
+void MainWindow::applyChannelBoxToSelection()
+{
+    if (updatingChannelBox_ || selectedObjectId_ == 0) {
+        return;
+    }
+
+    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    if (object == nullptr) {
+        return;
+    }
+
+    Transform transform = object->localTransform();
+    transform.translation = QVector3D(
+        static_cast<float>(translateXSpinBox_->value()),
+        static_cast<float>(translateYSpinBox_->value()),
+        static_cast<float>(translateZSpinBox_->value()));
+    transform.rotation = QQuaternion::fromEulerAngles(
+        static_cast<float>(rotateXSpinBox_->value()),
+        static_cast<float>(rotateYSpinBox_->value()),
+        static_cast<float>(rotateZSpinBox_->value()));
+    transform.scale = QVector3D(
+        static_cast<float>(scaleXSpinBox_->value()),
+        static_cast<float>(scaleYSpinBox_->value()),
+        static_cast<float>(scaleZSpinBox_->value()));
+
+    if (!viewport_->setObjectLocalTransform(selectedObjectId_, transform)) {
+        return;
+    }
+
+    updateChannelBox(selectedObjectId_);
+    logChannelBoxChangeToScriptEditor(transform);
+    statusBar()->showMessage("Channel Box updated", 1200);
+}
+
+void MainWindow::applyVisibilityToSelection(bool visible)
+{
+    if (updatingChannelBox_ || selectedObjectId_ == 0) {
+        return;
+    }
+
+    if (!viewport_->setObjectVisibility(selectedObjectId_, visible)) {
+        return;
+    }
+
+    visibilityCheckBox_->setText(visible ? "on" : "off");
+    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const bool canFrame = object != nullptr && object->isVisible() && object->worldBounds().isValid();
+    frameSelectedButton_->setEnabled(canFrame);
+    frameSelectedAction_->setEnabled(canFrame);
+    logVisibilityChangeToScriptEditor(visible);
+    statusBar()->showMessage(visible ? "Visibility on" : "Visibility off", 1200);
 }

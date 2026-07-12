@@ -77,6 +77,19 @@ QVector3D EditorCamera::target() const
     return target_;
 }
 
+QVector3D EditorCamera::forwardDirection() const
+{
+    return forwardVector();
+}
+
+float EditorCamera::worldUnitsPerPixelAt(const QVector3D& worldPosition) const
+{
+    const QVector3D eye = target_ - (forwardVector() * distance_);
+    const float distanceToPoint = qMax(0.001f, (worldPosition - eye).length());
+    const float worldHeight = 2.0f * distanceToPoint * qTan(qDegreesToRadians(fovDegrees_ * 0.5f));
+    return worldHeight / static_cast<float>(qMax(1, viewportHeight_));
+}
+
 QMatrix4x4 EditorCamera::viewMatrix() const
 {
     QMatrix4x4 view;

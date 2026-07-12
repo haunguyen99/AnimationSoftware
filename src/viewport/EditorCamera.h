@@ -19,6 +19,8 @@ public:
     float zoomSensitivity() const;
     void setZoomSensitivity(float value);
     QVector3D target() const;
+    QVector3D forwardDirection() const;
+    float worldUnitsPerPixelAt(const QVector3D& worldPosition) const;
 
     QMatrix4x4 viewMatrix() const;
     QMatrix4x4 projectionMatrix() const;

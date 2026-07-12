@@ -20,10 +20,10 @@ Moi khi co thay doi lon, phai cap nhat file nay.
 
 Scope dang tap trung truoc mat:
 
-* `v1 beta`
-* co `Viewport`
-* import duoc `FBX`
-* orbit / pan / zoom de xem model
+* `v0.2`
+* `editor shell`
+* inspect scene sau import
+* chuan bi nen cho phase animation sau
 
 ---
 
@@ -35,14 +35,21 @@ Tai lieu scope hien dung:
 * [Project_Phoenix_Technical_Spec_v1.md](</E:/Animation Software/Project_Phoenix_Technical_Spec_v1.md>)
 * [Project_Phoenix_V1_Beta_Viewport_FBX_Spec.md](</E:/Animation Software/Project_Phoenix_V1_Beta_Viewport_FBX_Spec.md>)
 * [Project_Phoenix_V1_Beta_Checklist.md](</E:/Animation Software/Project_Phoenix_V1_Beta_Checklist.md>)
+* [Project_Phoenix_V0_2_Editor_Shell_Scope.md](</E:/Animation Software/Project_Phoenix_V0_2_Editor_Shell_Scope.md>)
+* [Project_Phoenix_V0_2_Editor_Shell_Checklist.md](</E:/Animation Software/Project_Phoenix_V0_2_Editor_Shell_Checklist.md>)
 * [docs/Beta_Manual_QA.md](</E:/Animation Software/docs/Beta_Manual_QA.md>)
 
 Scope active hien tai:
 
-* beta nho, khong animation
-* khong timeline
-* khong plugin impl
-* khong save/load
+* `editor shell` nho, khong animation authoring
+* co `Outliner`
+* co `Inspector`
+* co `Selection`
+* co `Frame Selected`
+* cung co import pipeline
+* chua co timeline
+* chua co rigging tools
+* chua co save/load
 
 Quy trinh feature chinh thuc:
 
@@ -100,6 +107,21 @@ Da co:
 * `assets/sample/corrupt_minimal.fbx`
 * `tools/build_debug.ps1`
 * `tools/deploy_qt_runtime.ps1`
+* scope doc [Project_Phoenix_V0_2_Editor_Shell_Scope.md](</E:/Animation Software/Project_Phoenix_V0_2_Editor_Shell_Scope.md>)
+* checklist [Project_Phoenix_V0_2_Editor_Shell_Checklist.md](</E:/Animation Software/Project_Phoenix_V0_2_Editor_Shell_Checklist.md>)
+* design doc [docs/Application_Shell_V0_2_Design.md](</E:/Animation Software/docs/Application_Shell_V0_2_Design.md>)
+* implementation plan [docs/Application_Shell_V0_2_Implementation_Plan.md](</E:/Animation Software/docs/Application_Shell_V0_2_Implementation_Plan.md>)
+* `Application Shell` `v0.2` da xong layout host ban dau
+* `Outliner` dock host ben trai
+* `Inspector` dock host ben phai
+* empty state cho shell panels
+* `Outliner` single-selection flow
+* wrapper `RootNode` duoc an o layer `Outliner` khi chi la node gom 1 child va khong co mesh
+* `Inspector` read-only detail fields
+* `Frame Selected` action/menu/toolbar/button
+* selected object feedback bang viewport bounds overlay
+* import summary va import error message da duoc polish them
+* `FBX import module` da tach theo validation / parse adapter / scene builder / message formatting
 
 Chua co:
 
@@ -123,6 +145,15 @@ Da xong end-to-end:
 * debug asserts cho importer / scene append / renderer upload paths
 * bo sample assets toi thieu cho beta QA
 * manual QA theo [docs/Beta_Manual_QA.md](</E:/Animation Software/docs/Beta_Manual_QA.md>) da pass
+* scope `v0.2` da duoc chot
+* `Application Shell` da qua design -> implementation plan -> implementation -> build verification
+* `Outliner` runtime test pass
+* `Inspector` runtime test pass
+* `Selection Flow` runtime test pass
+* `Frame Selected` runtime test pass
+* `Viewport Feedback` runtime test pass
+* `Import UX` runtime test pass
+* `FBX Import Module Refactor` build + runtime test pass
 
 ---
 
@@ -151,9 +182,7 @@ Da xac nhan:
 
 Uu tien gan nhat:
 
-1. can nhac test tu dong cho camera / bounds / import validation
-2. can nhac polish them thong diep loi than thien cho corrupt FBX
-3. neu khong mo rong scope, co the xem `v1 beta` da dong
+1. them test foundation cho `camera` / `bounds` / `scene append` / import validation
 
 ---
 
