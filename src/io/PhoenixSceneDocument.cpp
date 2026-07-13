@@ -8,6 +8,18 @@
 
 namespace
 {
+QString objectKindToString(SceneObject::Kind kind)
+{
+    return kind == SceneObject::Kind::Joint ? "joint" : "transform";
+}
+
+SceneObject::Kind objectKindFromString(const QString& kind)
+{
+    return kind.compare("joint", Qt::CaseInsensitive) == 0
+        ? SceneObject::Kind::Joint
+        : SceneObject::Kind::Transform;
+}
+
 QJsonArray vector3ToJson(const QVector3D& value)
 {
     return QJsonArray { value.x(), value.y(), value.z() };
@@ -146,7 +158,7 @@ bool saveToFile(const Scene& scene, const QString& filePath, QString* errorMessa
 {
     QJsonObject root;
     root.insert("format", "phoenix-scene");
-    root.insert("version", 2);
+    root.insert("version", 3);
 
     QJsonArray meshes;
     const QVector<int> meshHandles = scene.allMeshHandles();
@@ -174,10 +186,19 @@ bool saveToFile(const Scene& scene, const QString& filePath, QString* errorMessa
         QJsonObject objectJson;
         objectJson.insert("id", static_cast<qint64>(object->id()));
         objectJson.insert("name", object->name());
+        objectJson.insert("kind", objectKindToString(object->kind()));
         objectJson.insert("parentId", static_cast<qint64>(object->parentId()));
         objectJson.insert("visible", object->isVisible());
         objectJson.insert("transform", transformToJson(object->localTransform()));
         objectJson.insert("authoredTransform", transformToJson(object->authoredTransform()));
+        objectJson.insert("jointOrientation", QJsonArray {
+            object->jointOrientation().scalar(),
+            object->jointOrientation().x(),
+            object->jointOrientation().y(),
+            object->jointOrientation().z()
+        });
+        objectJson.insert("hasBindPose", object->hasBindPose());
+        objectJson.insert("bindPoseLocalTransform", transformToJson(object->bindPoseLocalTransform()));
         objectJson.insert("transformKeyframes", keyframesToJson(object->transformKeyframes()));
         objectJson.insert("localBoundsMin", vector3ToJson(object->localBounds().min()));
         objectJson.insert("localBoundsMax", vector3ToJson(object->localBounds().max()));
@@ -229,6 +250,8 @@ LoadResult loadFromFile(const QString& filePath)
         return result;
     }
 
+    const int version = root.value("version").toInt(1);
+
     QHash<int, int> meshHandleMap;
     const QJsonArray meshes = root.value("meshes").toArray();
     for (const QJsonValue& meshValue : meshes) {
@@ -254,7 +277,8 @@ LoadResult loadFromFile(const QString& filePath)
     for (const QJsonValue& objectValue : objects) {
         const QJsonObject objectJson = objectValue.toObject();
         const SceneObject::Id oldId = static_cast<SceneObject::Id>(objectJson.value("id").toInteger());
-        const SceneObject::Id newId = result.scene.createObject(objectJson.value("name").toString());
+        const SceneObject::Kind kind = objectKindFromString(objectJson.value("kind").toString());
+        const SceneObject::Id newId = result.scene.createObject(objectJson.value("name").toString(), kind);
         objectIdMap.insert(oldId, newId);
 
         SceneObject* object = result.scene.findObject(newId);
@@ -270,6 +294,21 @@ LoadResult loadFromFile(const QString& filePath)
             : transformFromJson(authoredTransformObject);
         object->setAuthoredTransform(authoredTransform);
         object->setLocalTransform(localTransform);
+        if (version >= 3) {
+            const QJsonArray jointOrientationArray = objectJson.value("jointOrientation").toArray();
+            if (jointOrientationArray.size() == 4) {
+                object->setJointOrientation(QQuaternion(
+                    static_cast<float>(jointOrientationArray.at(0).toDouble()),
+                    static_cast<float>(jointOrientationArray.at(1).toDouble()),
+                    static_cast<float>(jointOrientationArray.at(2).toDouble()),
+                    static_cast<float>(jointOrientationArray.at(3).toDouble())));
+            }
+            object->setHasBindPose(objectJson.value("hasBindPose").toBool(false));
+            object->setBindPoseLocalTransform(transformFromJson(objectJson.value("bindPoseLocalTransform").toObject()));
+        } else if (object->isJoint()) {
+            object->setHasBindPose(true);
+            object->setBindPoseLocalTransform(localTransform);
+        }
         object->setTransformKeyframes(keyframesFromJson(objectJson.value("transformKeyframes").toArray()));
         object->setLocalBounds(Bounds3D::fromMinMax(
             vector3FromJson(objectJson.value("localBoundsMin").toArray()),

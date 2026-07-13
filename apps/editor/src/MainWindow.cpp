@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QDockWidget>
 #include <QFileDialog>
 #include <QFormLayout>
@@ -15,6 +16,7 @@
 #include <QMessageBox>
 #include <QListWidget>
 #include <QFileInfo>
+#include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -73,6 +75,17 @@ QString formatTransform(const Transform& transform)
         .arg(formatVector3(transform.scale));
 }
 
+QString formatBindPoseStatus(const SceneObject& object)
+{
+    if (!object.isJoint()) {
+        return "Bind pose: n/a";
+    }
+
+    return object.hasBindPose()
+        ? QString("Bind pose captured: %1").arg(formatTransform(object.bindPoseLocalTransform()))
+        : "Bind pose: not captured";
+}
+
 QDoubleSpinBox* createChannelSpinBox(QWidget* parent)
 {
     QDoubleSpinBox* spinBox = new QDoubleSpinBox(parent);
@@ -124,6 +137,11 @@ QString primitivePrefix(PrimitiveMeshFactory::Type type)
     return "pPrimitive";
 }
 
+QString defaultJointPrefix()
+{
+    return "joint";
+}
+
 QPushButton* createTransportButton(const QString& text, QWidget* parent)
 {
     QPushButton* button = new QPushButton(text, parent);
@@ -171,6 +189,52 @@ MainWindow::MainWindow()
     updateWindowTitle();
     clearInspector();
     statusBar()->showMessage("Ready");
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    if (outlinerTree_ != nullptr && watched == outlinerTree_->viewport() && event != nullptr) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto* mouseEvent = static_cast<QMouseEvent*>(event);
+            if (mouseEvent->button() == Qt::LeftButton) {
+                if (QTreeWidgetItem* item = outlinerTree_->itemAt(mouseEvent->pos())) {
+                    hierarchyDragSourceId_ = item->data(0, Qt::UserRole).toULongLong();
+                    hierarchyDragStartPos_ = mouseEvent->pos();
+                    hierarchyDragActive_ = hierarchyDragSourceId_ != 0;
+                    if (hierarchyDragActive_) {
+                        outlinerTree_->setCurrentItem(item);
+                        outlinerTree_->viewport()->setCursor(Qt::ClosedHandCursor);
+                        return true;
+                    }
+                }
+            }
+        } else if (event->type() == QEvent::MouseMove) {
+            auto* mouseEvent = static_cast<QMouseEvent*>(event);
+            if (hierarchyDragActive_ && (mouseEvent->buttons() & Qt::LeftButton)) {
+                return true;
+            }
+        } else if (event->type() == QEvent::MouseButtonRelease) {
+            auto* mouseEvent = static_cast<QMouseEvent*>(event);
+            if (hierarchyDragActive_ && mouseEvent->button() == Qt::LeftButton) {
+                outlinerTree_->viewport()->unsetCursor();
+                const QPoint delta = mouseEvent->pos() - hierarchyDragStartPos_;
+                const bool dragged = delta.manhattanLength() >= QApplication::startDragDistance();
+                std::uint64_t targetParentId = 0;
+                if (dragged) {
+                    if (QTreeWidgetItem* targetItem = outlinerTree_->itemAt(mouseEvent->pos())) {
+                        targetParentId = targetItem->data(0, Qt::UserRole).toULongLong();
+                    }
+                    reparentObjectInUi(hierarchyDragSourceId_, targetParentId);
+                }
+
+                hierarchyDragSourceId_ = 0;
+                hierarchyDragActive_ = false;
+                return true;
+            }
+        }
+    }
+
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::createMenus()
@@ -225,6 +289,48 @@ void MainWindow::createMenus()
     polygonPrimitivesAction_ = createMenu->addAction("Polygon Primitives");
     polygonPrimitivesAction_->setObjectName("polygonPrimitivesAction");
     QObject::connect(polygonPrimitivesAction_, &QAction::triggered, this, &MainWindow::showPolygonPrimitivesWindow);
+    createJointAction_ = createMenu->addAction("Joint");
+    createJointAction_->setObjectName("createJointAction");
+    QObject::connect(createJointAction_, &QAction::triggered, this, &MainWindow::createJoint);
+
+    QMenu* rigMenu = menuBar()->addMenu("&Rig");
+    markHierarchyParentAction_ = rigMenu->addAction("Mark Selected As Parent");
+    markHierarchyParentAction_->setObjectName("markHierarchyParentAction");
+    markHierarchyParentAction_->setEnabled(false);
+    QObject::connect(markHierarchyParentAction_, &QAction::triggered, this, &MainWindow::markSelectionAsHierarchyParent);
+
+    parentToMarkedParentAction_ = rigMenu->addAction("Parent Selected To Marked Parent");
+    parentToMarkedParentAction_->setObjectName("parentToMarkedParentAction");
+    parentToMarkedParentAction_->setEnabled(false);
+    parentToMarkedParentAction_->setShortcut(QKeySequence(Qt::Key_P));
+    QObject::connect(parentToMarkedParentAction_, &QAction::triggered, this, &MainWindow::parentSelectionToMarkedParent);
+
+    unparentSelectedAction_ = rigMenu->addAction("Unparent Selected");
+    unparentSelectedAction_->setObjectName("unparentSelectedAction");
+    unparentSelectedAction_->setEnabled(false);
+    unparentSelectedAction_->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_P));
+    QObject::connect(unparentSelectedAction_, &QAction::triggered, this, &MainWindow::unparentSelection);
+
+    rigMenu->addSeparator();
+    resetJointOrientationAction_ = rigMenu->addAction("Reset Joint Orientation");
+    resetJointOrientationAction_->setObjectName("resetJointOrientationAction");
+    resetJointOrientationAction_->setEnabled(false);
+    QObject::connect(resetJointOrientationAction_, &QAction::triggered, this, &MainWindow::resetSelectedJointOrientation);
+
+    alignJointOrientationAction_ = rigMenu->addAction("Align Joint Orientation To Child");
+    alignJointOrientationAction_->setObjectName("alignJointOrientationAction");
+    alignJointOrientationAction_->setEnabled(false);
+    QObject::connect(alignJointOrientationAction_, &QAction::triggered, this, &MainWindow::alignSelectedJointOrientationToChild);
+
+    captureBindPoseAction_ = rigMenu->addAction("Capture Bind Pose");
+    captureBindPoseAction_->setObjectName("captureBindPoseAction");
+    captureBindPoseAction_->setEnabled(false);
+    QObject::connect(captureBindPoseAction_, &QAction::triggered, this, &MainWindow::captureSelectedBindPose);
+
+    captureBindPoseRecursiveAction_ = rigMenu->addAction("Capture Bind Pose Recursive");
+    captureBindPoseRecursiveAction_->setObjectName("captureBindPoseRecursiveAction");
+    captureBindPoseRecursiveAction_->setEnabled(false);
+    QObject::connect(captureBindPoseRecursiveAction_, &QAction::triggered, this, &MainWindow::captureSelectedBindPoseRecursive);
 
     QMenu* windowsMenu = menuBar()->addMenu("&Windows");
     scriptEditorAction_ = windowsMenu->addAction("Script Editor");
@@ -321,6 +427,12 @@ void MainWindow::createToolbar()
     toolbar_->setMovable(false);
     toolbar_->addAction(importFbxAction_);
     toolbar_->addAction(polygonPrimitivesAction_);
+    toolbar_->addAction(createJointAction_);
+    toolbar_->addAction(markHierarchyParentAction_);
+    toolbar_->addAction(parentToMarkedParentAction_);
+    toolbar_->addAction(unparentSelectedAction_);
+    toolbar_->addAction(alignJointOrientationAction_);
+    toolbar_->addAction(captureBindPoseAction_);
     toolbar_->addSeparator();
     toolbar_->addAction(resetCameraAction_);
     toolbar_->addAction(frameSceneAction_);
@@ -501,6 +613,7 @@ QWidget* MainWindow::createOutlinerPanel()
     outlinerTree_->setObjectName("outlinerTree");
     outlinerTree_->setHeaderLabel("Scene");
     outlinerTree_->setSelectionMode(QAbstractItemView::SingleSelection);
+    outlinerTree_->viewport()->installEventFilter(this);
     QObject::connect(outlinerTree_, &QTreeWidget::itemSelectionChanged, this, &MainWindow::handleOutlinerSelectionChanged);
     layout->addWidget(outlinerTree_);
 
@@ -549,6 +662,45 @@ QWidget* MainWindow::createInspectorPanel()
     visibilityCheckBox_ = new QCheckBox("on", inspectorDetailsWidget_);
     visibilityCheckBox_->setObjectName("visibilityCheckBox");
 
+    jointToolsWidget_ = new QWidget(inspectorDetailsWidget_);
+    jointToolsWidget_->setObjectName("jointToolsWidget");
+    QVBoxLayout* jointToolsLayout = new QVBoxLayout(jointToolsWidget_);
+    jointToolsLayout->setContentsMargins(0, 0, 0, 0);
+    jointToolsLayout->setSpacing(6);
+
+    QWidget* jointOrientationWidget = new QWidget(jointToolsWidget_);
+    QFormLayout* jointOrientationLayout = new QFormLayout(jointOrientationWidget);
+    jointOrientationLayout->setContentsMargins(0, 0, 0, 0);
+    jointOrientationLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    jointOrientXSpinBox_ = createChannelSpinBox(jointOrientationWidget);
+    jointOrientXSpinBox_->setObjectName("jointOrientXSpinBox");
+    jointOrientYSpinBox_ = createChannelSpinBox(jointOrientationWidget);
+    jointOrientYSpinBox_->setObjectName("jointOrientYSpinBox");
+    jointOrientZSpinBox_ = createChannelSpinBox(jointOrientationWidget);
+    jointOrientZSpinBox_->setObjectName("jointOrientZSpinBox");
+    jointOrientationLayout->addRow("Joint Orient X", jointOrientXSpinBox_);
+    jointOrientationLayout->addRow("Joint Orient Y", jointOrientYSpinBox_);
+    jointOrientationLayout->addRow("Joint Orient Z", jointOrientZSpinBox_);
+    jointToolsLayout->addWidget(jointOrientationWidget);
+
+    bindPoseStatusLabel_ = new QLabel("Bind pose: n/a", jointToolsWidget_);
+    bindPoseStatusLabel_->setObjectName("bindPoseStatusLabel");
+    bindPoseStatusLabel_->setWordWrap(true);
+    jointToolsLayout->addWidget(bindPoseStatusLabel_);
+
+    resetJointOrientationButton_ = new QPushButton("Reset Orientation", jointToolsWidget_);
+    resetJointOrientationButton_->setObjectName("resetJointOrientationButton");
+    alignJointOrientationButton_ = new QPushButton("Align To First Child", jointToolsWidget_);
+    alignJointOrientationButton_->setObjectName("alignJointOrientationButton");
+    captureBindPoseButton_ = new QPushButton("Capture Bind Pose", jointToolsWidget_);
+    captureBindPoseButton_->setObjectName("captureBindPoseButton");
+    captureBindPoseRecursiveButton_ = new QPushButton("Capture Bind Pose Recursive", jointToolsWidget_);
+    captureBindPoseRecursiveButton_->setObjectName("captureBindPoseRecursiveButton");
+    jointToolsLayout->addWidget(resetJointOrientationButton_);
+    jointToolsLayout->addWidget(alignJointOrientationButton_);
+    jointToolsLayout->addWidget(captureBindPoseButton_);
+    jointToolsLayout->addWidget(captureBindPoseRecursiveButton_);
+
     inspectorFormLayout->addRow(channelObjectNameLabel_);
     inspectorFormLayout->addRow("Translate X", translateXSpinBox_);
     inspectorFormLayout->addRow("Translate Y", translateYSpinBox_);
@@ -560,6 +712,7 @@ QWidget* MainWindow::createInspectorPanel()
     inspectorFormLayout->addRow("Scale Y", scaleYSpinBox_);
     inspectorFormLayout->addRow("Scale Z", scaleZSpinBox_);
     inspectorFormLayout->addRow("Visibility", visibilityCheckBox_);
+    inspectorFormLayout->addRow("Joint Tools", jointToolsWidget_);
 
     for (QDoubleSpinBox* spinBox : { translateXSpinBox_, translateYSpinBox_, translateZSpinBox_,
              rotateXSpinBox_, rotateYSpinBox_, rotateZSpinBox_,
@@ -568,7 +721,16 @@ QWidget* MainWindow::createInspectorPanel()
             applyChannelBoxToSelection();
         });
     }
+    for (QDoubleSpinBox* spinBox : { jointOrientXSpinBox_, jointOrientYSpinBox_, jointOrientZSpinBox_ }) {
+        QObject::connect(spinBox, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) {
+            applyJointOrientationToSelection();
+        });
+    }
     QObject::connect(visibilityCheckBox_, &QCheckBox::toggled, this, &MainWindow::applyVisibilityToSelection);
+    QObject::connect(resetJointOrientationButton_, &QPushButton::clicked, this, &MainWindow::resetSelectedJointOrientation);
+    QObject::connect(alignJointOrientationButton_, &QPushButton::clicked, this, &MainWindow::alignSelectedJointOrientationToChild);
+    QObject::connect(captureBindPoseButton_, &QPushButton::clicked, this, &MainWindow::captureSelectedBindPose);
+    QObject::connect(captureBindPoseRecursiveButton_, &QPushButton::clicked, this, &MainWindow::captureSelectedBindPoseRecursive);
 
     frameSelectedButton_ = new QPushButton("Frame Selected", inspectorPanel);
     frameSelectedButton_->setObjectName("frameSelectedButton");
@@ -1055,6 +1217,220 @@ void MainWindow::createPrimitiveFromPalette()
     statusBar()->showMessage(QString("Created %1").arg(PrimitiveMeshFactory::displayName(type)), 2000);
 }
 
+void MainWindow::createJoint()
+{
+    const QString jointName = generateUniqueObjectName(defaultJointPrefix());
+    const SceneObject::Id parentId = selectedObjectId_ != 0 ? selectedObjectId_ : 0;
+    const SceneObject::Id objectId = viewport_->createJoint(jointName, parentId);
+    if (objectId == 0) {
+        statusBar()->showMessage("Joint creation failed", 2000);
+        return;
+    }
+
+    refreshScenePanels();
+    selectObject(objectId, true);
+    appendScriptHistoryLine(QString("joint -name \"%1\";").arg(jointName));
+    appendScriptHistoryLine(QString("// Result: %1 //").arg(jointName));
+    statusBar()->showMessage(QString("Created %1").arg(jointName), 2000);
+}
+
+void MainWindow::markSelectionAsHierarchyParent()
+{
+    if (selectedObjectId_ == 0) {
+        statusBar()->showMessage("Select an object to mark as parent", 1500);
+        return;
+    }
+
+    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    if (object == nullptr) {
+        statusBar()->showMessage("Selected object is no longer available", 1500);
+        return;
+    }
+
+    markedHierarchyParentId_ = selectedObjectId_;
+    const QString objectName = objectDisplayName(*object);
+    appendScriptComment(QString("Marked hierarchy parent: %1").arg(objectName));
+    statusBar()->showMessage(QString("Marked parent: %1").arg(objectName), 2000);
+    updateInspector(selectedObjectId_);
+}
+
+void MainWindow::parentSelectionToMarkedParent()
+{
+    if (selectedObjectId_ == 0 || markedHierarchyParentId_ == 0) {
+        statusBar()->showMessage("Select an object and mark a parent first", 1500);
+        return;
+    }
+
+    if (selectedObjectId_ == markedHierarchyParentId_) {
+        statusBar()->showMessage("Cannot parent an object to itself", 1500);
+        return;
+    }
+
+    reparentObjectInUi(selectedObjectId_, markedHierarchyParentId_);
+}
+
+void MainWindow::unparentSelection()
+{
+    if (selectedObjectId_ == 0) {
+        statusBar()->showMessage("Select an object to unparent", 1500);
+        return;
+    }
+
+    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    if (object == nullptr) {
+        statusBar()->showMessage("Selected object is no longer available", 1500);
+        return;
+    }
+
+    if (object->parentId() == 0) {
+        statusBar()->showMessage("Selected object is already at root", 1500);
+        return;
+    }
+
+    reparentObjectInUi(selectedObjectId_, 0);
+}
+
+void MainWindow::resetSelectedJointOrientation()
+{
+    if (selectedObjectId_ == 0) {
+        statusBar()->showMessage("Select a joint to reset orientation", 1500);
+        return;
+    }
+
+    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    if (object == nullptr || !object->isJoint()) {
+        statusBar()->showMessage("Selected object is not a joint", 1500);
+        return;
+    }
+
+    if (!viewport_->resetJointOrientation(selectedObjectId_)) {
+        statusBar()->showMessage("Reset joint orientation failed", 1500);
+        return;
+    }
+
+    updateInspector(selectedObjectId_);
+    appendScriptHistoryLine(QString("jointOrient %1 -reset;").arg(objectDisplayName(*object)));
+    appendScriptHistoryLine(QString("// Result: reset joint orientation on %1 //").arg(objectDisplayName(*object)));
+    statusBar()->showMessage("Joint orientation reset", 1500);
+}
+
+void MainWindow::alignSelectedJointOrientationToChild()
+{
+    if (selectedObjectId_ == 0) {
+        statusBar()->showMessage("Select a joint to align orientation", 1500);
+        return;
+    }
+
+    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    if (object == nullptr || !object->isJoint()) {
+        statusBar()->showMessage("Selected object is not a joint", 1500);
+        return;
+    }
+
+    if (!viewport_->alignJointOrientationToChild(selectedObjectId_)) {
+        statusBar()->showMessage("Align orientation needs a child joint offset", 1500);
+        return;
+    }
+
+    updateInspector(selectedObjectId_);
+    appendScriptHistoryLine(QString("jointOrient %1 -alignToChild;").arg(objectDisplayName(*object)));
+    appendScriptHistoryLine(QString("// Result: aligned joint orientation on %1 //").arg(objectDisplayName(*object)));
+    statusBar()->showMessage("Joint orientation aligned to child", 1500);
+}
+
+void MainWindow::captureSelectedBindPose()
+{
+    if (selectedObjectId_ == 0) {
+        statusBar()->showMessage("Select a joint to capture bind pose", 1500);
+        return;
+    }
+
+    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    if (object == nullptr || !object->isJoint()) {
+        statusBar()->showMessage("Selected object is not a joint", 1500);
+        return;
+    }
+
+    if (!viewport_->captureBindPose(selectedObjectId_, false)) {
+        statusBar()->showMessage("Capture bind pose failed", 1500);
+        return;
+    }
+
+    updateInspector(selectedObjectId_);
+    appendScriptHistoryLine(QString("bindPose -capture %1;").arg(objectDisplayName(*object)));
+    appendScriptHistoryLine(QString("// Result: captured bind pose on %1 //").arg(objectDisplayName(*object)));
+    statusBar()->showMessage("Bind pose captured", 1500);
+}
+
+void MainWindow::captureSelectedBindPoseRecursive()
+{
+    if (selectedObjectId_ == 0) {
+        statusBar()->showMessage("Select a joint to capture bind pose", 1500);
+        return;
+    }
+
+    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    if (object == nullptr || !object->isJoint()) {
+        statusBar()->showMessage("Selected object is not a joint", 1500);
+        return;
+    }
+
+    if (!viewport_->captureBindPose(selectedObjectId_, true)) {
+        statusBar()->showMessage("Recursive capture bind pose failed", 1500);
+        return;
+    }
+
+    updateInspector(selectedObjectId_);
+    appendScriptHistoryLine(QString("bindPose -capture -recursive %1;").arg(objectDisplayName(*object)));
+    appendScriptHistoryLine(QString("// Result: captured bind pose on %1 recursively //").arg(objectDisplayName(*object)));
+    statusBar()->showMessage("Bind pose captured recursively", 1500);
+}
+
+bool MainWindow::reparentObjectInUi(std::uint64_t childId, std::uint64_t newParentId, bool logToScript)
+{
+    const SceneObject* childObject = viewport_->scene().findObject(childId);
+    const SceneObject* parentObject = newParentId == 0 ? nullptr : viewport_->scene().findObject(newParentId);
+    if (childObject == nullptr || (newParentId != 0 && parentObject == nullptr)) {
+        statusBar()->showMessage("Hierarchy target is no longer available", 1500);
+        return false;
+    }
+
+    if (childId == newParentId) {
+        statusBar()->showMessage("Cannot parent an object to itself", 1500);
+        return false;
+    }
+
+    const QString childName = objectDisplayName(*childObject);
+    const QString parentName = parentObject == nullptr ? QString() : objectDisplayName(*parentObject);
+
+    Scene updatedScene = viewport_->scene();
+    if (!updatedScene.reparentObject(childId, newParentId)) {
+        statusBar()->showMessage(newParentId == 0 ? "Unparent operation failed" : "Parent operation failed", 1500);
+        return false;
+    }
+
+    viewport_->replaceScene(updatedScene);
+    refreshScenePanels();
+    selectObject(childId, true);
+
+    if (logToScript) {
+        if (newParentId == 0) {
+            appendScriptHistoryLine(QString("unparent %1;").arg(childName));
+            appendScriptHistoryLine(QString("// Result: unparented %1 //").arg(childName));
+        } else {
+            appendScriptHistoryLine(QString("parent %1 %2;").arg(childName, parentName));
+            appendScriptHistoryLine(QString("// Result: parented %1 under %2 //").arg(childName, parentName));
+        }
+    }
+
+    statusBar()->showMessage(
+        newParentId == 0
+            ? QString("Unparented %1").arg(childName)
+            : QString("Parented %1 under %2").arg(childName, parentName),
+        2000);
+    return true;
+}
+
 void MainWindow::showScriptEditorWindow()
 {
     if (scriptEditorDock_ == nullptr) {
@@ -1178,6 +1554,18 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
         selectObject(objectId, true);
         return objectName;
     };
+    context.createJoint = [this](const QString& requestedName) {
+        const QString objectName = generateUniqueObjectName(requestedName.trimmed().isEmpty() ? defaultJointPrefix() : requestedName.trimmed());
+        const SceneObject::Id parentId = selectedObjectId_ != 0 ? selectedObjectId_ : 0;
+        const SceneObject::Id objectId = viewport_->createJoint(objectName, parentId);
+        if (objectId == 0) {
+            return QString();
+        }
+
+        refreshScenePanels();
+        selectObject(objectId, true);
+        return objectName;
+    };
     context.renameObject = [this](const QString& sourceName, const QString& newName) {
         const std::uint64_t objectId = findObjectIdByName(sourceName);
         if (objectId == 0 || newName.trimmed().isEmpty()) {
@@ -1276,6 +1664,95 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
         clearInspector();
         return true;
     };
+    context.parentObject = [this](const QString& childName, const QString& parentName) {
+        const std::uint64_t childId = findObjectIdByName(childName);
+        const std::uint64_t parentId = findObjectIdByName(parentName);
+        if (childId == 0 || parentId == 0) {
+            return false;
+        }
+
+        Scene updatedScene = viewport_->scene();
+        if (!updatedScene.reparentObject(childId, parentId)) {
+            return false;
+        }
+
+        viewport_->replaceScene(updatedScene);
+        refreshScenePanels();
+        selectObject(childId, true);
+        return true;
+    };
+    context.unparentObject = [this](const QString& childName) {
+        const std::uint64_t childId = findObjectIdByName(childName);
+        if (childId == 0) {
+            return false;
+        }
+
+        Scene updatedScene = viewport_->scene();
+        if (!updatedScene.reparentObject(childId, 0)) {
+            return false;
+        }
+
+        viewport_->replaceScene(updatedScene);
+        refreshScenePanels();
+        selectObject(childId, true);
+        return true;
+    };
+    context.setJointOrientation = [this](const QString& objectName, const QVector3D& eulerDegrees) {
+        const std::uint64_t objectId = findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        if (!viewport_->setJointOrientation(objectId, QQuaternion::fromEulerAngles(eulerDegrees))) {
+            return false;
+        }
+
+        refreshScenePanels();
+        selectObject(objectId, true);
+        return true;
+    };
+    context.resetJointOrientation = [this](const QString& objectName) {
+        const std::uint64_t objectId = findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        if (!viewport_->resetJointOrientation(objectId)) {
+            return false;
+        }
+
+        refreshScenePanels();
+        selectObject(objectId, true);
+        return true;
+    };
+    context.alignJointOrientationToChild = [this](const QString& objectName) {
+        const std::uint64_t objectId = findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        if (!viewport_->alignJointOrientationToChild(objectId)) {
+            return false;
+        }
+
+        refreshScenePanels();
+        selectObject(objectId, true);
+        return true;
+    };
+    context.captureBindPose = [this](const QString& objectName, bool recursive) {
+        const std::uint64_t objectId = findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        if (!viewport_->captureBindPose(objectId, recursive)) {
+            return false;
+        }
+
+        refreshScenePanels();
+        selectObject(objectId, true);
+        return true;
+    };
     context.setAttribute = [this](const QString& objectName, const QString& attributeName, const QList<double>& values) {
         const std::uint64_t objectId = findObjectIdByName(objectName);
         if (objectId == 0) {
@@ -1310,6 +1787,20 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
 
         if (values.size() != 3) {
             return false;
+        }
+
+        if (attributeName == "jointOrient") {
+        if (!viewport_->setJointOrientation(objectId, QQuaternion::fromEulerAngles(
+                    static_cast<float>(values.at(0)),
+                    static_cast<float>(values.at(1)),
+                    static_cast<float>(values.at(2))))) {
+                return false;
+            }
+
+            if (objectId == selectedObjectId_) {
+                updateChannelBox(objectId);
+            }
+            return true;
         }
 
         Transform transform = object->localTransform();
@@ -1564,6 +2055,9 @@ void MainWindow::logVisibilityChangeToScriptEditor(bool visible)
 
 void MainWindow::refreshScenePanels()
 {
+    if (markedHierarchyParentId_ != 0 && !viewport_->scene().contains(markedHierarchyParentId_)) {
+        markedHierarchyParentId_ = 0;
+    }
     populateOutliner();
     clearInspector();
 }
@@ -1651,6 +2145,10 @@ void MainWindow::clearInspector()
     scaleXSpinBox_->setValue(1.0);
     scaleYSpinBox_->setValue(1.0);
     scaleZSpinBox_->setValue(1.0);
+    jointOrientXSpinBox_->setValue(0.0);
+    jointOrientYSpinBox_->setValue(0.0);
+    jointOrientZSpinBox_->setValue(0.0);
+    bindPoseStatusLabel_->setText("Bind pose: n/a");
     visibilityCheckBox_->setChecked(true);
     visibilityCheckBox_->setText("on");
     updatingChannelBox_ = false;
@@ -1660,6 +2158,27 @@ void MainWindow::clearInspector()
     }
     if (deleteKeyButton_ != nullptr) {
         deleteKeyButton_->setEnabled(false);
+    }
+    if (markHierarchyParentAction_ != nullptr) {
+        markHierarchyParentAction_->setEnabled(false);
+    }
+    if (parentToMarkedParentAction_ != nullptr) {
+        parentToMarkedParentAction_->setEnabled(false);
+    }
+    if (unparentSelectedAction_ != nullptr) {
+        unparentSelectedAction_->setEnabled(false);
+    }
+    if (resetJointOrientationAction_ != nullptr) {
+        resetJointOrientationAction_->setEnabled(false);
+    }
+    if (alignJointOrientationAction_ != nullptr) {
+        alignJointOrientationAction_->setEnabled(false);
+    }
+    if (captureBindPoseAction_ != nullptr) {
+        captureBindPoseAction_->setEnabled(false);
+    }
+    if (captureBindPoseRecursiveAction_ != nullptr) {
+        captureBindPoseRecursiveAction_->setEnabled(false);
     }
     refreshAnimationTimelineUi();
     frameSelectedButton_->setEnabled(false);
@@ -1685,6 +2204,27 @@ void MainWindow::updateInspector(std::uint64_t objectId)
     }
     if (deleteKeyButton_ != nullptr) {
         deleteKeyButton_->setEnabled(object->hasTransformKeyframe(currentFrame_));
+    }
+    if (markHierarchyParentAction_ != nullptr) {
+        markHierarchyParentAction_->setEnabled(true);
+    }
+    if (parentToMarkedParentAction_ != nullptr) {
+        parentToMarkedParentAction_->setEnabled(markedHierarchyParentId_ != 0 && markedHierarchyParentId_ != objectId);
+    }
+    if (unparentSelectedAction_ != nullptr) {
+        unparentSelectedAction_->setEnabled(object->parentId() != 0);
+    }
+    if (resetJointOrientationAction_ != nullptr) {
+        resetJointOrientationAction_->setEnabled(object->isJoint());
+    }
+    if (alignJointOrientationAction_ != nullptr) {
+        alignJointOrientationAction_->setEnabled(object->isJoint() && !object->childIds().isEmpty());
+    }
+    if (captureBindPoseAction_ != nullptr) {
+        captureBindPoseAction_->setEnabled(object->isJoint());
+    }
+    if (captureBindPoseRecursiveAction_ != nullptr) {
+        captureBindPoseRecursiveAction_->setEnabled(object->isJoint());
     }
     refreshAnimationTimelineUi();
     frameSelectedButton_->setEnabled(canFrame);
@@ -2038,7 +2578,7 @@ std::uint64_t MainWindow::copyObjectSubtreeToScene(const Scene& sourceScene, std
         return 0;
     }
 
-    const SceneObject::Id newId = targetScene.createObject(sourceObject->name());
+    const SceneObject::Id newId = targetScene.createObject(sourceObject->name(), sourceObject->kind());
     SceneObject* targetObject = targetScene.findObject(newId);
     if (targetObject == nullptr) {
         return 0;
@@ -2048,6 +2588,9 @@ std::uint64_t MainWindow::copyObjectSubtreeToScene(const Scene& sourceScene, std
     targetObject->setVisible(sourceObject->isVisible());
     targetObject->setAuthoredTransform(sourceObject->authoredTransform());
     targetObject->setLocalTransform(sourceObject->localTransform());
+    targetObject->setJointOrientation(sourceObject->jointOrientation());
+    targetObject->setBindPoseLocalTransform(sourceObject->bindPoseLocalTransform());
+    targetObject->setHasBindPose(sourceObject->hasBindPose());
     targetObject->setTransformKeyframes(sourceObject->transformKeyframes());
     targetObject->setLocalBounds(sourceObject->localBounds());
 
@@ -2088,6 +2631,8 @@ void MainWindow::updateChannelBox(std::uint64_t objectId)
 
     const Transform& transform = object->localTransform();
     const QVector3D eulerDegrees = transform.rotation.toEulerAngles();
+    const QVector3D jointOrientEuler = object->jointOrientation().toEulerAngles();
+    const bool isJoint = object->isJoint();
 
     updatingChannelBox_ = true;
     channelObjectNameLabel_->setText(objectDisplayName(*object));
@@ -2100,9 +2645,18 @@ void MainWindow::updateChannelBox(std::uint64_t objectId)
     scaleXSpinBox_->setValue(transform.scale.x());
     scaleYSpinBox_->setValue(transform.scale.y());
     scaleZSpinBox_->setValue(transform.scale.z());
+    jointOrientXSpinBox_->setValue(isJoint ? jointOrientEuler.x() : 0.0);
+    jointOrientYSpinBox_->setValue(isJoint ? jointOrientEuler.y() : 0.0);
+    jointOrientZSpinBox_->setValue(isJoint ? jointOrientEuler.z() : 0.0);
+    bindPoseStatusLabel_->setText(formatBindPoseStatus(*object));
     visibilityCheckBox_->setChecked(object->isVisible());
     visibilityCheckBox_->setText(object->isVisible() ? "on" : "off");
     updatingChannelBox_ = false;
+    jointToolsWidget_->setEnabled(isJoint);
+    resetJointOrientationButton_->setEnabled(isJoint);
+    alignJointOrientationButton_->setEnabled(isJoint && !object->childIds().isEmpty());
+    captureBindPoseButton_->setEnabled(isJoint);
+    captureBindPoseRecursiveButton_->setEnabled(isJoint);
     setChannelBoxEnabled(true);
     refreshAnimationTimelineUi();
 }
@@ -2228,6 +2782,37 @@ void MainWindow::applyChannelBoxToSelection()
     updateChannelBox(selectedObjectId_);
     logChannelBoxChangeToScriptEditor(transform);
     statusBar()->showMessage("Channel Box updated", 1200);
+}
+
+void MainWindow::applyJointOrientationToSelection()
+{
+    if (updatingChannelBox_ || selectedObjectId_ == 0) {
+        return;
+    }
+
+    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    if (object == nullptr || !object->isJoint()) {
+        return;
+    }
+
+    const QVector3D eulerDegrees(
+        static_cast<float>(jointOrientXSpinBox_->value()),
+        static_cast<float>(jointOrientYSpinBox_->value()),
+        static_cast<float>(jointOrientZSpinBox_->value()));
+
+    if (!viewport_->setJointOrientation(selectedObjectId_, QQuaternion::fromEulerAngles(eulerDegrees))) {
+        statusBar()->showMessage("Joint orientation update failed", 1200);
+        return;
+    }
+
+    updateChannelBox(selectedObjectId_);
+    appendScriptHistoryLine(QString("jointOrient %1 -euler %2 %3 %4;")
+            .arg(objectDisplayName(*object))
+            .arg(jointOrientXSpinBox_->value(), 0, 'f', 3)
+            .arg(jointOrientYSpinBox_->value(), 0, 'f', 3)
+            .arg(jointOrientZSpinBox_->value(), 0, 'f', 3));
+    appendScriptHistoryLine(QString("// Result: joint orientation updated on %1 //").arg(objectDisplayName(*object)));
+    statusBar()->showMessage("Joint orientation updated", 1200);
 }
 
 void MainWindow::applyVisibilityToSelection(bool visible)

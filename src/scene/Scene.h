@@ -14,7 +14,8 @@ class Scene
 public:
     Scene();
 
-    SceneObject::Id createObject(const QString& name = {});
+    SceneObject::Id createObject(const QString& name = {}, SceneObject::Kind kind = SceneObject::Kind::Transform);
+    SceneObject::Id createJoint(const QString& name = {}, SceneObject::Id parentId = 0);
     bool contains(SceneObject::Id id) const;
 
     SceneObject* findObject(SceneObject::Id id);
@@ -36,7 +37,11 @@ public:
     bool setObjectKeyframe(SceneObject::Id id, int frame);
     bool removeObjectKeyframe(SceneObject::Id id, int frame);
     bool setObjectVisible(SceneObject::Id id, bool visible);
-    bool reparentObject(SceneObject::Id id, SceneObject::Id newParentId);
+    bool setJointOrientation(SceneObject::Id id, const QQuaternion& orientation);
+    bool resetJointOrientation(SceneObject::Id id);
+    bool alignJointOrientationToChild(SceneObject::Id id);
+    bool captureBindPose(SceneObject::Id id, bool recursive = false);
+    bool reparentObject(SceneObject::Id id, SceneObject::Id newParentId, bool keepWorldTransform = true);
     bool removeObject(SceneObject::Id id);
     SceneObject::Id duplicateSubtree(SceneObject::Id id, SceneObject::Id newParentId = 0);
     void optimizeStorage();
@@ -49,6 +54,8 @@ public:
     QString debugDump() const;
 
 private:
+    Transform composeObjectLocalTransform(const SceneObject& object, const Transform& baseTransform) const;
+    bool isDescendantOf(SceneObject::Id id, SceneObject::Id potentialAncestorId) const;
     Transform evaluateObjectTransformAtFrame(const SceneObject& object, int frame) const;
     SceneObject::Id duplicateSubtreeRecursive(const Scene& sourceScene, SceneObject::Id sourceId, SceneObject::Id newParentId);
     void removeObjectRecursive(SceneObject::Id id);

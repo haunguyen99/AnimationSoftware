@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QPoint>
 
 #include <cstdint>
 
@@ -34,6 +35,7 @@ public:
     MainWindow();
 
 private:
+    bool eventFilter(QObject* watched, QEvent* event) override;
     enum class TransformUiMode
     {
         Translate,
@@ -68,6 +70,15 @@ private:
     void savePreferences();
     void loadPreferences();
     void createPrimitiveFromPalette();
+    void createJoint();
+    void markSelectionAsHierarchyParent();
+    void parentSelectionToMarkedParent();
+    void unparentSelection();
+    void resetSelectedJointOrientation();
+    void alignSelectedJointOrientationToChild();
+    void captureSelectedBindPose();
+    void captureSelectedBindPoseRecursive();
+    bool reparentObjectInUi(std::uint64_t childId, std::uint64_t newParentId, bool logToScript = true);
     void showScriptEditorWindow();
     void executeScriptEditorAll();
     void executeScriptEditorSelection();
@@ -112,6 +123,7 @@ private:
     void refreshAnimationTimelineUi();
     void setChannelBoxEnabled(bool enabled);
     void applyChannelBoxToSelection();
+    void applyJointOrientationToSelection();
     void applyVisibilityToSelection(bool visible);
     PrimitiveMeshFactory::Type primitiveTypeFromItem(const QListWidgetItem* item) const;
 
@@ -149,6 +161,15 @@ private:
     QDoubleSpinBox* scaleXSpinBox_ = nullptr;
     QDoubleSpinBox* scaleYSpinBox_ = nullptr;
     QDoubleSpinBox* scaleZSpinBox_ = nullptr;
+    QWidget* jointToolsWidget_ = nullptr;
+    QDoubleSpinBox* jointOrientXSpinBox_ = nullptr;
+    QDoubleSpinBox* jointOrientYSpinBox_ = nullptr;
+    QDoubleSpinBox* jointOrientZSpinBox_ = nullptr;
+    QLabel* bindPoseStatusLabel_ = nullptr;
+    QPushButton* resetJointOrientationButton_ = nullptr;
+    QPushButton* alignJointOrientationButton_ = nullptr;
+    QPushButton* captureBindPoseButton_ = nullptr;
+    QPushButton* captureBindPoseRecursiveButton_ = nullptr;
     QCheckBox* visibilityCheckBox_ = nullptr;
     QPushButton* frameSelectedButton_ = nullptr;
     QToolBar* toolbar_ = nullptr;
@@ -176,10 +197,22 @@ private:
     QAction* localAxisAction_ = nullptr;
     QAction* restoreWorkspaceLayoutAction_ = nullptr;
     QAction* polygonPrimitivesAction_ = nullptr;
+    QAction* createJointAction_ = nullptr;
+    QAction* markHierarchyParentAction_ = nullptr;
+    QAction* parentToMarkedParentAction_ = nullptr;
+    QAction* unparentSelectedAction_ = nullptr;
+    QAction* resetJointOrientationAction_ = nullptr;
+    QAction* alignJointOrientationAction_ = nullptr;
+    QAction* captureBindPoseAction_ = nullptr;
+    QAction* captureBindPoseRecursiveAction_ = nullptr;
     QAction* scriptEditorAction_ = nullptr;
     ScriptCommandRegistry scriptCommandRegistry_;
     QString currentSceneFilePath_;
     std::uint64_t selectedObjectId_ = 0;
+    std::uint64_t markedHierarchyParentId_ = 0;
+    std::uint64_t hierarchyDragSourceId_ = 0;
+    QPoint hierarchyDragStartPos_;
+    bool hierarchyDragActive_ = false;
     int currentFrame_ = 0;
     int playbackStartFrame_ = 0;
     int playbackEndFrame_ = 24;

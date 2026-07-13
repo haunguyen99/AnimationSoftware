@@ -30,6 +30,21 @@ void SceneObject::setName(const QString& name)
     name_ = name;
 }
 
+SceneObject::Kind SceneObject::kind() const
+{
+    return kind_;
+}
+
+void SceneObject::setKind(Kind kind)
+{
+    kind_ = kind;
+}
+
+bool SceneObject::isJoint() const
+{
+    return kind_ == Kind::Joint;
+}
+
 SceneObject::Id SceneObject::parentId() const
 {
     return parentId_;
@@ -84,6 +99,36 @@ const Transform& SceneObject::authoredTransform() const
 void SceneObject::setAuthoredTransform(const Transform& transform)
 {
     authoredTransform_ = transform;
+}
+
+const QQuaternion& SceneObject::jointOrientation() const
+{
+    return jointOrientation_;
+}
+
+void SceneObject::setJointOrientation(const QQuaternion& orientation)
+{
+    jointOrientation_ = orientation.normalized();
+}
+
+const Transform& SceneObject::bindPoseLocalTransform() const
+{
+    return bindPoseLocalTransform_;
+}
+
+void SceneObject::setBindPoseLocalTransform(const Transform& transform)
+{
+    bindPoseLocalTransform_ = transform;
+}
+
+bool SceneObject::hasBindPose() const
+{
+    return hasBindPose_;
+}
+
+void SceneObject::setHasBindPose(bool hasBindPose)
+{
+    hasBindPose_ = hasBindPose;
 }
 
 bool SceneObject::hasAnimation() const

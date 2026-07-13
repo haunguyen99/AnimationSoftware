@@ -136,6 +136,23 @@ bool ScriptCommandRegistry::execute(QString commandLine, const ScriptCommandCont
         return true;
     }
 
+    if (command == "joint") {
+        QString jointName;
+        const int nameIndex = tokens.indexOf("-name");
+        if (nameIndex >= 0 && nameIndex + 1 < tokens.size()) {
+            jointName = stripQuotes(tokens.at(nameIndex + 1));
+        }
+
+        const QString createdJoint = context.createJoint ? context.createJoint(jointName) : QString();
+        if (createdJoint.isEmpty()) {
+            result.resultLine = "// Error: joint creation failed //";
+            return true;
+        }
+
+        result.resultLine = QString("// Result: %1 //").arg(createdJoint);
+        return true;
+    }
+
     if (command == "duplicate") {
         if (tokens.size() < 2) {
             result.resultLine = "// Error: duplicate requires an object name //";
@@ -181,6 +198,120 @@ bool ScriptCommandRegistry::execute(QString commandLine, const ScriptCommandCont
         const bool deleted = context.deleteObject
             && context.deleteObject(stripQuotes(tokens.at(1)));
         result.resultLine = deleted ? "// Result: object deleted //" : "// Error: delete failed //";
+        return true;
+    }
+
+    if (command == "parent") {
+        if (tokens.size() < 3) {
+            result.resultLine = "// Error: parent requires child and parent names //";
+            return true;
+        }
+
+        const QString childName = stripQuotes(tokens.at(1));
+        const QString parentName = stripQuotes(tokens.at(2));
+        const bool parented = context.parentObject && context.parentObject(childName, parentName);
+        result.resultLine = parented
+            ? QString("// Result: parented %1 under %2 //").arg(childName, parentName)
+            : "// Error: parent failed //";
+        return true;
+    }
+
+    if (command == "unparent") {
+        if (tokens.size() < 2) {
+            result.resultLine = "// Error: unparent requires a child name //";
+            return true;
+        }
+
+        const QString childName = stripQuotes(tokens.at(1));
+        const bool unparented = context.unparentObject && context.unparentObject(childName);
+        result.resultLine = unparented
+            ? QString("// Result: unparented %1 //").arg(childName)
+            : "// Error: unparent failed //";
+        return true;
+    }
+
+    if (command == "jointOrient") {
+        QString objectName;
+        for (int index = 1; index < tokens.size(); ++index) {
+            const QString token = stripQuotes(tokens.at(index));
+            if (!token.startsWith('-')) {
+                objectName = token;
+                break;
+            }
+        }
+
+        if (objectName.isEmpty()) {
+            result.resultLine = "// Error: jointOrient requires an object name //";
+            return true;
+        }
+
+        if (tokens.contains("-reset")) {
+            const bool reset = context.resetJointOrientation && context.resetJointOrientation(objectName);
+            result.resultLine = reset
+                ? QString("// Result: reset joint orientation on %1 //").arg(objectName)
+                : "// Error: jointOrient reset failed //";
+            return true;
+        }
+
+        if (tokens.contains("-alignToChild")) {
+            const bool aligned = context.alignJointOrientationToChild && context.alignJointOrientationToChild(objectName);
+            result.resultLine = aligned
+                ? QString("// Result: aligned joint orientation on %1 //").arg(objectName)
+                : "// Error: jointOrient align failed //";
+            return true;
+        }
+
+        const int eulerIndex = tokens.indexOf("-euler");
+        if (eulerIndex < 0 || eulerIndex + 3 >= tokens.size()) {
+            result.resultLine = "// Error: jointOrient requires -euler x y z, -reset, or -alignToChild //";
+            return true;
+        }
+
+        bool okX = false;
+        bool okY = false;
+        bool okZ = false;
+        const float x = tokens.at(eulerIndex + 1).toFloat(&okX);
+        const float y = tokens.at(eulerIndex + 2).toFloat(&okY);
+        const float z = tokens.at(eulerIndex + 3).toFloat(&okZ);
+        if (!okX || !okY || !okZ) {
+            result.resultLine = "// Error: invalid jointOrient euler values //";
+            return true;
+        }
+
+        const bool updated = context.setJointOrientation
+            && context.setJointOrientation(objectName, QVector3D(x, y, z));
+        result.resultLine = updated
+            ? QString("// Result: joint orientation updated on %1 //").arg(objectName)
+            : "// Error: jointOrient failed //";
+        return true;
+    }
+
+    if (command == "bindPose") {
+        if (!tokens.contains("-capture")) {
+            result.resultLine = "// Error: bindPose requires -capture //";
+            return true;
+        }
+
+        QString objectName;
+        for (int index = 1; index < tokens.size(); ++index) {
+            const QString token = stripQuotes(tokens.at(index));
+            if (!token.startsWith('-')) {
+                objectName = token;
+                break;
+            }
+        }
+
+        if (objectName.isEmpty()) {
+            result.resultLine = "// Error: bindPose requires an object name //";
+            return true;
+        }
+
+        const bool recursive = tokens.contains("-recursive");
+        const bool captured = context.captureBindPose && context.captureBindPose(objectName, recursive);
+        result.resultLine = captured
+            ? QString("// Result: captured bind pose on %1%2 //")
+                  .arg(objectName, recursive ? " recursively" : "")
+            : "// Error: bindPose capture failed //";
         return true;
     }
 

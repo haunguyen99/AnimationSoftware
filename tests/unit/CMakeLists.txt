@@ -2,6 +2,7 @@ find_package(Qt6 REQUIRED COMPONENTS Gui Widgets Test OpenGLWidgets OpenGL)
 
 add_executable(scene_transform_tests
     SceneTransformTests.cpp
+    ${CMAKE_SOURCE_DIR}/src/io/PhoenixSceneDocument.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/Bounds3D.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/SceneObject.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/Scene.cpp

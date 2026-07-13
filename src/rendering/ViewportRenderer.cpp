@@ -154,12 +154,41 @@ void appendRotateRing(QVector<ViewportRenderer::Vertex>& vertices,
         appendLine(vertices, pointA, pointB, color);
     }
 }
+
+void appendJointDiamond(QVector<ViewportRenderer::Vertex>& vertices,
+    const QVector3D& origin,
+    const QVector3D& color,
+    float size)
+{
+    const QVector3D top = origin + QVector3D(0.0f, size, 0.0f);
+    const QVector3D bottom = origin + QVector3D(0.0f, -size, 0.0f);
+    const QVector3D left = origin + QVector3D(-size, 0.0f, 0.0f);
+    const QVector3D right = origin + QVector3D(size, 0.0f, 0.0f);
+    const QVector3D front = origin + QVector3D(0.0f, 0.0f, size);
+    const QVector3D back = origin + QVector3D(0.0f, 0.0f, -size);
+
+    appendLine(vertices, top, left, color);
+    appendLine(vertices, top, right, color);
+    appendLine(vertices, top, front, color);
+    appendLine(vertices, top, back, color);
+
+    appendLine(vertices, bottom, left, color);
+    appendLine(vertices, bottom, right, color);
+    appendLine(vertices, bottom, front, color);
+    appendLine(vertices, bottom, back, color);
+
+    appendLine(vertices, left, front, color);
+    appendLine(vertices, front, right, color);
+    appendLine(vertices, right, back, color);
+    appendLine(vertices, back, left, color);
+}
 }
 
 ViewportRenderer::ViewportRenderer()
     : vertexBuffer_(QOpenGLBuffer::VertexBuffer)
     , importedVertexBuffer_(QOpenGLBuffer::VertexBuffer)
     , importedIndexBuffer_(QOpenGLBuffer::IndexBuffer)
+    , jointVertexBuffer_(QOpenGLBuffer::VertexBuffer)
     , selectionVertexBuffer_(QOpenGLBuffer::VertexBuffer)
     , gizmoVertexBuffer_(QOpenGLBuffer::VertexBuffer)
 {
@@ -177,6 +206,10 @@ ViewportRenderer::~ViewportRenderer()
 
     if (importedIndexBuffer_.isCreated()) {
         importedIndexBuffer_.destroy();
+    }
+
+    if (jointVertexBuffer_.isCreated()) {
+        jointVertexBuffer_.destroy();
     }
 
     if (selectionVertexBuffer_.isCreated()) {
@@ -260,6 +293,18 @@ bool ViewportRenderer::initialize(QOpenGLFunctions_3_3_Core* functions)
         return false;
     }
     selectionVao_.release();
+
+    if (!jointVao_.create()) {
+        qCWarning(logViewport) << "failed to create joint VAO.";
+        return false;
+    }
+    jointVao_.bind();
+    if (!jointVertexBuffer_.create()) {
+        qCWarning(logViewport) << "failed to create joint vertex buffer.";
+        jointVao_.release();
+        return false;
+    }
+    jointVao_.release();
 
     if (!gizmoVao_.create()) {
         qCWarning(logViewport) << "failed to create gizmo VAO.";
@@ -353,6 +398,19 @@ void ViewportRenderer::render(const EditorCamera& camera, const ViewportRenderOp
         selectionVao_.release();
     }
 
+    if (!jointVertices_.isEmpty()) {
+        shaderProgram_->setUniformValue("uMvp", meshMvp);
+        shaderProgram_->setUniformValue("uUseLighting", false);
+        jointVao_.bind();
+        functions_->glDisable(GL_CULL_FACE);
+        functions_->glDisable(GL_DEPTH_TEST);
+        functions_->glDepthMask(GL_FALSE);
+        functions_->glLineWidth(2.5f);
+        functions_->glDrawArrays(GL_LINES, 0, jointVertices_.size());
+        functions_->glEnable(GL_DEPTH_TEST);
+        jointVao_.release();
+    }
+
     if (!gizmoVertices_.isEmpty()) {
         shaderProgram_->setUniformValue("uMvp", meshMvp);
         shaderProgram_->setUniformValue("uUseLighting", false);
@@ -438,6 +496,7 @@ void ViewportRenderer::syncScene(const Scene& scene)
     }
 
     uploadImportedMesh(scene);
+    uploadJointGeometry(scene);
 }
 
 void ViewportRenderer::setSelectedBounds(const Bounds3D& bounds)
@@ -600,6 +659,62 @@ void ViewportRenderer::uploadImportedMesh(const Scene& scene)
         importedIndexBuffer_.release();
         importedVao_.release();
     }
+}
+
+void ViewportRenderer::uploadJointGeometry(const Scene& scene)
+{
+    Q_ASSERT(jointVertexBuffer_.isCreated());
+
+    jointVertices_.clear();
+    const QVector3D jointColor(0.94f, 0.82f, 0.28f);
+    const QVector3D boneColor(1.0f, 0.96f, 0.50f);
+    const QVector3D accentColor(0.98f, 0.72f, 0.20f);
+
+    for (SceneObject::Id objectId : scene.allObjectIds()) {
+        const SceneObject* object = scene.findObject(objectId);
+        if (object == nullptr || !object->isVisible() || !object->isJoint()) {
+            continue;
+        }
+
+        const QVector3D position = scene.worldTransform(objectId) * QVector3D(0.0f, 0.0f, 0.0f);
+        const float markerSize = 0.11f;
+        appendJointDiamond(jointVertices_, position, jointColor, markerSize);
+
+        for (SceneObject::Id childId : object->childIds()) {
+            const SceneObject* child = scene.findObject(childId);
+            if (child == nullptr || !child->isJoint() || !child->isVisible()) {
+                continue;
+            }
+
+            const QVector3D childPosition = scene.worldTransform(childId) * QVector3D(0.0f, 0.0f, 0.0f);
+            appendLine(jointVertices_, position, childPosition, boneColor);
+
+            const QVector3D boneDirection = (childPosition - position).normalized();
+            const QVector3D accentStart = position + boneDirection * (markerSize * 0.75f);
+            const QVector3D accentEnd = position + boneDirection * (markerSize * 2.0f);
+            appendLine(jointVertices_, accentStart, accentEnd, accentColor);
+        }
+    }
+
+    jointVao_.bind();
+    jointVertexBuffer_.bind();
+    jointVertexBuffer_.allocate(
+        jointVertices_.isEmpty() ? nullptr : jointVertices_.constData(),
+        jointVertices_.size() * sizeof(Vertex));
+
+    if (shaderProgram_) {
+        shaderProgram_->bind();
+        shaderProgram_->enableAttributeArray(0);
+        shaderProgram_->setAttributeBuffer(0, GL_FLOAT, offsetof(Vertex, position), 3, sizeof(Vertex));
+        shaderProgram_->enableAttributeArray(1);
+        shaderProgram_->setAttributeBuffer(1, GL_FLOAT, offsetof(Vertex, normal), 3, sizeof(Vertex));
+        shaderProgram_->enableAttributeArray(2);
+        shaderProgram_->setAttributeBuffer(2, GL_FLOAT, offsetof(Vertex, color), 3, sizeof(Vertex));
+        shaderProgram_->release();
+    }
+
+    jointVertexBuffer_.release();
+    jointVao_.release();
 }
 
 void ViewportRenderer::uploadSelectionBounds()

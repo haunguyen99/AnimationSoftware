@@ -2,6 +2,7 @@
 
 #include <QList>
 #include <QString>
+#include <QVector3D>
 
 #include <functional>
 
@@ -18,10 +19,17 @@ struct ScriptCommandContext
     std::function<void()> clearSelection;
     std::function<bool(const QString& objectName)> selectObjectByName;
     std::function<QString(PrimitiveMeshFactory::Type type)> createPrimitive;
+    std::function<QString(const QString& name)> createJoint;
     std::function<QString(const QString& sourceName, const QString& newName)> renameObject;
     std::function<QString(const QString& sourceName)> duplicateObject;
     std::function<QString(const QString& sourceName)> groupObject;
     std::function<bool(const QString& sourceName)> deleteObject;
+    std::function<bool(const QString& childName, const QString& parentName)> parentObject;
+    std::function<bool(const QString& childName)> unparentObject;
+    std::function<bool(const QString& objectName, const QVector3D& eulerDegrees)> setJointOrientation;
+    std::function<bool(const QString& objectName)> resetJointOrientation;
+    std::function<bool(const QString& objectName)> alignJointOrientationToChild;
+    std::function<bool(const QString& objectName, bool recursive)> captureBindPose;
     std::function<bool(const QString& objectName, const QString& attributeName, const QList<double>& values)> setAttribute;
     std::function<void()> newScene;
     std::function<bool(const QString& filePath)> openSceneFile;

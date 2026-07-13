@@ -7,6 +7,8 @@
 
 namespace
 {
+constexpr float kJointBoundsRadius = 0.2f;
+
 Transform interpolateTransform(const Transform& a, const Transform& b, float t)
 {
     Transform result;
@@ -15,16 +17,53 @@ Transform interpolateTransform(const Transform& a, const Transform& b, float t)
     result.scale = a.scale * (1.0f - t) + b.scale * t;
     return result;
 }
+
+Bounds3D jointBoundsAtPosition(const QVector3D& position)
+{
+    return Bounds3D::fromMinMax(
+        position - QVector3D(kJointBoundsRadius, kJointBoundsRadius, kJointBoundsRadius),
+        position + QVector3D(kJointBoundsRadius, kJointBoundsRadius, kJointBoundsRadius));
+}
 }
 
 Scene::Scene() = default;
 
-SceneObject::Id Scene::createObject(const QString& name)
+SceneObject::Id Scene::createObject(const QString& name, SceneObject::Kind kind)
 {
     const SceneObject::Id id = nextId_++;
     SceneObject object(id);
     object.setName(name.isEmpty() ? QString("Object_%1").arg(id) : name);
+    object.setKind(kind);
+    object.setAuthoredTransform(Transform());
+    object.setLocalTransform(Transform());
+    if (kind == SceneObject::Kind::Joint) {
+        object.setHasBindPose(true);
+        object.setBindPoseLocalTransform(Transform());
+        object.setLocalBounds(jointBoundsAtPosition(QVector3D()));
+    }
     objects_.insert(id, object);
+    return id;
+}
+
+SceneObject::Id Scene::createJoint(const QString& name, SceneObject::Id parentId)
+{
+    if (parentId != 0 && !contains(parentId)) {
+        return 0;
+    }
+
+    const SceneObject::Id id = createObject(name.isEmpty() ? QString("joint_%1").arg(nextId_ - 1) : name, SceneObject::Kind::Joint);
+    if (parentId != 0 && !reparentObject(id, parentId)) {
+        removeObject(id);
+        return 0;
+    }
+
+    SceneObject* object = findObject(id);
+    if (object != nullptr) {
+        object->setHasBindPose(true);
+        object->setBindPoseLocalTransform(object->authoredTransform());
+    }
+
+    rebuildWorldData();
     return id;
 }
 
@@ -178,7 +217,69 @@ bool Scene::setObjectVisible(SceneObject::Id id, bool visible)
     return true;
 }
 
-bool Scene::reparentObject(SceneObject::Id id, SceneObject::Id newParentId)
+bool Scene::setJointOrientation(SceneObject::Id id, const QQuaternion& orientation)
+{
+    SceneObject* object = findObject(id);
+    if (object == nullptr || !object->isJoint()) {
+        return false;
+    }
+
+    object->setJointOrientation(orientation);
+    rebuildWorldData();
+    return true;
+}
+
+bool Scene::resetJointOrientation(SceneObject::Id id)
+{
+    return setJointOrientation(id, QQuaternion());
+}
+
+bool Scene::alignJointOrientationToChild(SceneObject::Id id)
+{
+    SceneObject* object = findObject(id);
+    if (object == nullptr || !object->isJoint() || object->childIds().isEmpty()) {
+        return false;
+    }
+
+    const SceneObject* child = findObject(object->childIds().first());
+    if (child == nullptr) {
+        return false;
+    }
+
+    const QVector3D aimVector = child->localTransform().translation.normalized();
+    if (aimVector.lengthSquared() < 0.0001f) {
+        object->setJointOrientation(QQuaternion());
+    } else {
+        object->setJointOrientation(QQuaternion::rotationTo(QVector3D(1.0f, 0.0f, 0.0f), aimVector));
+    }
+
+    rebuildWorldData();
+    return true;
+}
+
+bool Scene::captureBindPose(SceneObject::Id id, bool recursive)
+{
+    SceneObject* object = findObject(id);
+    if (object == nullptr || !object->isJoint()) {
+        return false;
+    }
+
+    object->setBindPoseLocalTransform(object->localTransform());
+    object->setHasBindPose(true);
+
+    if (recursive) {
+        for (SceneObject::Id childId : object->childIds()) {
+            const SceneObject* child = findObject(childId);
+            if (child != nullptr && child->isJoint()) {
+                captureBindPose(childId, true);
+            }
+        }
+    }
+
+    return true;
+}
+
+bool Scene::reparentObject(SceneObject::Id id, SceneObject::Id newParentId, bool keepWorldTransform)
 {
     SceneObject* object = findObject(id);
     if (object == nullptr) {
@@ -193,15 +294,12 @@ bool Scene::reparentObject(SceneObject::Id id, SceneObject::Id newParentId)
         return false;
     }
 
-    SceneObject::Id ancestorId = newParentId;
-    while (ancestorId != 0) {
-        if (ancestorId == id) {
-            return false;
-        }
-
-        const SceneObject* ancestor = findObject(ancestorId);
-        ancestorId = ancestor == nullptr ? 0 : ancestor->parentId();
+    if (isDescendantOf(newParentId, id)) {
+        return false;
     }
+
+    const QMatrix4x4 currentWorldMatrix = worldTransform(id);
+    const Transform currentLocalTransform = object->localTransform();
 
     if (object->parentId() != 0) {
         if (SceneObject* oldParent = findObject(object->parentId())) {
@@ -218,6 +316,29 @@ bool Scene::reparentObject(SceneObject::Id id, SceneObject::Id newParentId)
 
         if (!newParent->childIds().contains(id)) {
             newParent->addChildId(id);
+        }
+    }
+
+    if (keepWorldTransform) {
+        const QMatrix4x4 parentWorldMatrix = newParentId == 0 ? QMatrix4x4() : worldTransform(newParentId);
+        const QMatrix4x4 localMatrix = parentWorldMatrix.inverted() * currentWorldMatrix;
+
+        Transform updatedTransform = currentLocalTransform;
+        updatedTransform.translation = localMatrix * QVector3D(0.0f, 0.0f, 0.0f);
+        updatedTransform.rotation = QQuaternion::fromRotationMatrix(localMatrix.normalMatrix());
+        updatedTransform.scale = QVector3D(
+            localMatrix.mapVector(QVector3D(1.0f, 0.0f, 0.0f)).length(),
+            localMatrix.mapVector(QVector3D(0.0f, 1.0f, 0.0f)).length(),
+            localMatrix.mapVector(QVector3D(0.0f, 0.0f, 1.0f)).length());
+
+        if (object->isJoint()) {
+            updatedTransform.rotation = object->jointOrientation().conjugated() * updatedTransform.rotation;
+        }
+
+        object->setLocalTransform(updatedTransform);
+        object->setAuthoredTransform(updatedTransform);
+        if (object->hasAnimation()) {
+            object->setTransformKeyframe(currentFrame_, updatedTransform);
         }
     }
 
@@ -309,7 +430,7 @@ SceneObject::Id Scene::duplicateSubtreeRecursive(const Scene& sourceScene, Scene
         return 0;
     }
 
-    const SceneObject::Id newId = createObject(sourceObject->name());
+    const SceneObject::Id newId = createObject(sourceObject->name(), sourceObject->kind());
     SceneObject* targetObject = findObject(newId);
     if (targetObject == nullptr) {
         return 0;
@@ -318,6 +439,9 @@ SceneObject::Id Scene::duplicateSubtreeRecursive(const Scene& sourceScene, Scene
     targetObject->setParentId(newParentId);
     targetObject->setLocalTransform(sourceObject->localTransform());
     targetObject->setAuthoredTransform(sourceObject->authoredTransform());
+    targetObject->setJointOrientation(sourceObject->jointOrientation());
+    targetObject->setBindPoseLocalTransform(sourceObject->bindPoseLocalTransform());
+    targetObject->setHasBindPose(sourceObject->hasBindPose());
     targetObject->setTransformKeyframes(sourceObject->transformKeyframes());
     targetObject->setLocalBounds(sourceObject->localBounds());
     targetObject->setWorldBounds(sourceObject->worldBounds());
@@ -374,7 +498,7 @@ void Scene::appendScene(const Scene& other)
             continue;
         }
 
-        const SceneObject::Id newId = createObject(sourceObject->name());
+        const SceneObject::Id newId = createObject(sourceObject->name(), sourceObject->kind());
         objectIdMap.insert(oldId, newId);
         Q_ASSERT(objectIdMap.contains(oldId));
 
@@ -386,6 +510,9 @@ void Scene::appendScene(const Scene& other)
 
         targetObject->setLocalTransform(sourceObject->localTransform());
         targetObject->setAuthoredTransform(sourceObject->authoredTransform());
+        targetObject->setJointOrientation(sourceObject->jointOrientation());
+        targetObject->setBindPoseLocalTransform(sourceObject->bindPoseLocalTransform());
+        targetObject->setHasBindPose(sourceObject->hasBindPose());
         targetObject->setTransformKeyframes(sourceObject->transformKeyframes());
         targetObject->setLocalBounds(sourceObject->localBounds());
         targetObject->setWorldBounds(sourceObject->worldBounds());
@@ -455,7 +582,7 @@ QMatrix4x4 Scene::worldTransform(SceneObject::Id id) const
     QMatrix4x4 worldMatrix;
     for (auto it = chain.crbegin(); it != chain.crend(); ++it) {
         if (const SceneObject* chainObject = findObject(*it)) {
-            worldMatrix *= SceneMath::composeMatrix(chainObject->localTransform());
+            worldMatrix *= SceneMath::composeMatrix(composeObjectLocalTransform(*chainObject, chainObject->localTransform()));
         }
     }
 
@@ -495,8 +622,13 @@ void Scene::rebuildWorldDataForObject(SceneObject::Id objectId, const QMatrix4x4
 
     const Transform evaluatedTransform = evaluateObjectTransformAtFrame(*object, currentFrame_);
     object->setLocalTransform(evaluatedTransform);
-    const QMatrix4x4 worldMatrix = parentWorldMatrix * SceneMath::composeMatrix(evaluatedTransform);
-    object->setWorldBounds(SceneMath::transformBounds(object->localBounds(), worldMatrix));
+    const Transform composedTransform = composeObjectLocalTransform(*object, evaluatedTransform);
+    const QMatrix4x4 worldMatrix = parentWorldMatrix * SceneMath::composeMatrix(composedTransform);
+    if (object->isJoint()) {
+        object->setWorldBounds(jointBoundsAtPosition(worldMatrix * QVector3D(0.0f, 0.0f, 0.0f)));
+    } else {
+        object->setWorldBounds(SceneMath::transformBounds(object->localBounds(), worldMatrix));
+    }
 
     for (SceneObject::Id childId : object->childIds()) {
         rebuildWorldDataForObject(childId, worldMatrix);
@@ -536,6 +668,30 @@ Transform Scene::evaluateObjectTransformAtFrame(const SceneObject& object, int f
     return object.authoredTransform();
 }
 
+Transform Scene::composeObjectLocalTransform(const SceneObject& object, const Transform& baseTransform) const
+{
+    Transform composed = baseTransform;
+    if (object.isJoint()) {
+        composed.rotation = object.jointOrientation() * composed.rotation;
+    }
+    return composed;
+}
+
+bool Scene::isDescendantOf(SceneObject::Id id, SceneObject::Id potentialAncestorId) const
+{
+    SceneObject::Id ancestorId = id;
+    while (ancestorId != 0) {
+        if (ancestorId == potentialAncestorId) {
+            return true;
+        }
+
+        const SceneObject* ancestor = findObject(ancestorId);
+        ancestorId = ancestor == nullptr ? 0 : ancestor->parentId();
+    }
+
+    return false;
+}
+
 QString Scene::debugDump() const
 {
     QStringList lines;
@@ -543,9 +699,10 @@ QString Scene::debugDump() const
 
     for (auto it = objects_.cbegin(); it != objects_.cend(); ++it) {
         const SceneObject& object = it.value();
-        lines << QString("[%1] %2 parent=%3 mesh=%4 children=%5")
+        lines << QString("[%1] %2 kind=%3 parent=%4 mesh=%5 children=%6")
                      .arg(object.id())
                      .arg(object.name())
+                     .arg(object.isJoint() ? "joint" : "transform")
                      .arg(object.parentId())
                      .arg(object.meshHandles().size())
                      .arg(object.childIds().size());

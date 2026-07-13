@@ -325,6 +325,50 @@ bool ViewportWidget::removeObjectKeyframe(SceneObject::Id objectId, int frame)
     return true;
 }
 
+bool ViewportWidget::setJointOrientation(SceneObject::Id objectId, const QQuaternion& orientation)
+{
+    if (!scene_.setJointOrientation(objectId, orientation)) {
+        return false;
+    }
+
+    syncSceneToRenderer();
+    requestRender();
+    return true;
+}
+
+bool ViewportWidget::resetJointOrientation(SceneObject::Id objectId)
+{
+    if (!scene_.resetJointOrientation(objectId)) {
+        return false;
+    }
+
+    syncSceneToRenderer();
+    requestRender();
+    return true;
+}
+
+bool ViewportWidget::alignJointOrientationToChild(SceneObject::Id objectId)
+{
+    if (!scene_.alignJointOrientationToChild(objectId)) {
+        return false;
+    }
+
+    syncSceneToRenderer();
+    requestRender();
+    return true;
+}
+
+bool ViewportWidget::captureBindPose(SceneObject::Id objectId, bool recursive)
+{
+    if (!scene_.captureBindPose(objectId, recursive)) {
+        return false;
+    }
+
+    syncSceneToRenderer();
+    requestRender();
+    return true;
+}
+
 SceneObject::Id ViewportWidget::createPrimitive(PrimitiveMeshFactory::Type type, const QString& name)
 {
     if (!PrimitiveMeshFactory::isImplemented(type)) {
@@ -349,6 +393,19 @@ SceneObject::Id ViewportWidget::createPrimitive(PrimitiveMeshFactory::Type type,
 
     syncSceneToRenderer();
 
+    setSelectedObject(objectId);
+    requestRender();
+    return objectId;
+}
+
+SceneObject::Id ViewportWidget::createJoint(const QString& name, SceneObject::Id parentId)
+{
+    const SceneObject::Id objectId = scene_.createJoint(name, parentId);
+    if (objectId == 0) {
+        return 0;
+    }
+
+    syncSceneToRenderer();
     setSelectedObject(objectId);
     requestRender();
     return objectId;

@@ -8,7 +8,7 @@ It is intended to be more accurate than the older high-level milestone image and
 
 ## Current Position
 
-Project Phoenix is currently at the end of `v0.2` and preparing to move into `v0.3`.
+Project Phoenix has completed `v0.3 Animation Data Foundation` and is now in `v0.4 Rigging Foundation phase 1`.
 
 The project already includes:
 
@@ -24,6 +24,10 @@ The project already includes:
 - timeline and playback shell
 - early Script Editor
 - initial command system for editor actions
+- keyframe animation data per object
+- set key / auto key / delete key workflow
+- playback that evaluates animated transforms
+- timeline key markers
 
 ## Milestones
 
@@ -70,11 +74,10 @@ Scope:
   - `setToolTo`
 
 Status:
-- Largely completed
+- Completed
 
 Notes:
-- Timeline is functional as an editor shell.
-- Real animation data and keyframe evaluation are not finished yet.
+- Scene workflow is in place, including file workflow and command-driven editing.
 
 ### v0.3 Animation Data Foundation
 
@@ -94,7 +97,7 @@ Exit criteria:
 - A user can animate translate / rotate / scale on an object across multiple frames.
 
 Status:
-- Next priority
+- Completed
 
 ### v0.4 Rigging Foundation
 
@@ -112,7 +115,11 @@ Exit criteria:
 - A user can create and edit a valid skeleton hierarchy in the editor.
 
 Status:
-- Not started
+- In progress
+
+Notes:
+- `v0.4 phase 1` already includes joint data, hierarchy editing, viewport skeleton draw, orientation basics, bind pose capture, and scene serialization.
+- The remaining work is mostly manual QA and deciding whether a small `phase 2` polish pass is needed before moving to `v0.5`.
 
 ### v0.5 Skinning
 
@@ -227,14 +234,12 @@ Status:
 
 The best next engineering sequence is:
 
-1. Add a keyframe data model.
-2. Connect object transforms to animation tracks.
-3. Show keys on the timeline.
-4. Add `Set Key`.
-5. Make playback evaluate animation data instead of only changing the frame counter.
+1. Manual QA the current `v0.4 phase 1` hierarchy and orientation workflow.
+2. Decide whether `v0.4` needs a short polish phase for richer orientation rules or socket-style parenting.
+3. Connect the rig hierarchy to future skinning work.
 
 ## Notes For Planning
 
 - The editor shell is advancing slightly ahead of the original roadmap because tooling such as the Script Editor and command system has already started.
 - This is acceptable, because those systems will support animation, automation, undo/redo, and plugin workflows later.
-- The main remaining gap before `v0.3` can be considered active is the lack of real animation data and evaluation.
+- The next major product gap after `v0.4 phase 1` is skinning: skeleton authoring now exists, but mesh deformation does not.

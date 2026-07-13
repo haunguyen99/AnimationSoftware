@@ -34,6 +34,12 @@ private slots:
     void scriptCommandRegistryDispatchesSetKeyframeCommand();
     void scriptCommandRegistryDispatchesDeleteKeyCommand();
     void scriptCommandRegistryDispatchesAutoKeyCommand();
+    void scriptCommandRegistryDispatchesJointHierarchyCommands();
+    void scriptCommandRegistryDispatchesJointOrientationAndBindPoseCommands();
+    void hierarchyActionsParentAndUnparentJoints();
+    void hierarchyActionsExposeMayaLikeShortcuts();
+    void leftMouseDragReparentsOutlinerItems();
+    void jointInspectorEditsOrientationAndCapturesBindPose();
     void timelineUiShowsKeyframeFeedback();
 
 private:
@@ -384,6 +390,253 @@ void EditorUiTests::scriptCommandRegistryDispatchesAutoKeyCommand()
     QVERIFY(registry.execute("autoKeyframe -state off;", context, &execution));
     QVERIFY(!autoKeyEnabled);
     QCOMPARE(execution.resultLine, QString("// Result: auto key off //"));
+}
+
+void EditorUiTests::scriptCommandRegistryDispatchesJointHierarchyCommands()
+{
+    ScriptCommandRegistry registry;
+    ScriptCommandContext context;
+    QString createdJoint;
+    QString parentedChild;
+    QString parentedParent;
+    QString unparentedChild;
+    context.createJoint = [&createdJoint](const QString& name) {
+        createdJoint = name.isEmpty() ? QString("joint1") : name;
+        return createdJoint;
+    };
+    context.parentObject = [&parentedChild, &parentedParent](const QString& childName, const QString& parentName) {
+        parentedChild = childName;
+        parentedParent = parentName;
+        return true;
+    };
+    context.unparentObject = [&unparentedChild](const QString& childName) {
+        unparentedChild = childName;
+        return true;
+    };
+
+    ScriptCommandExecution execution;
+    QVERIFY(registry.execute("joint -name shoulder_jnt;", context, &execution));
+    QCOMPARE(createdJoint, QString("shoulder_jnt"));
+    QCOMPARE(execution.resultLine, QString("// Result: shoulder_jnt //"));
+
+    QVERIFY(registry.execute("parent wrist_jnt elbow_jnt;", context, &execution));
+    QCOMPARE(parentedChild, QString("wrist_jnt"));
+    QCOMPARE(parentedParent, QString("elbow_jnt"));
+    QCOMPARE(execution.resultLine, QString("// Result: parented wrist_jnt under elbow_jnt //"));
+
+    QVERIFY(registry.execute("unparent wrist_jnt;", context, &execution));
+    QCOMPARE(unparentedChild, QString("wrist_jnt"));
+    QCOMPARE(execution.resultLine, QString("// Result: unparented wrist_jnt //"));
+}
+
+void EditorUiTests::scriptCommandRegistryDispatchesJointOrientationAndBindPoseCommands()
+{
+    ScriptCommandRegistry registry;
+    ScriptCommandContext context;
+    QString orientedJoint;
+    QVector3D orientedEuler;
+    QString resetJoint;
+    QString alignedJoint;
+    QString bindPoseJoint;
+    bool bindPoseRecursive = false;
+    context.setJointOrientation = [&orientedJoint, &orientedEuler](const QString& objectName, const QVector3D& eulerDegrees) {
+        orientedJoint = objectName;
+        orientedEuler = eulerDegrees;
+        return true;
+    };
+    context.resetJointOrientation = [&resetJoint](const QString& objectName) {
+        resetJoint = objectName;
+        return true;
+    };
+    context.alignJointOrientationToChild = [&alignedJoint](const QString& objectName) {
+        alignedJoint = objectName;
+        return true;
+    };
+    context.captureBindPose = [&bindPoseJoint, &bindPoseRecursive](const QString& objectName, bool recursive) {
+        bindPoseJoint = objectName;
+        bindPoseRecursive = recursive;
+        return true;
+    };
+
+    ScriptCommandExecution execution;
+    QVERIFY(registry.execute("jointOrient shoulder_jnt -euler 0 45 90;", context, &execution));
+    QCOMPARE(orientedJoint, QString("shoulder_jnt"));
+    QCOMPARE(orientedEuler, QVector3D(0.0f, 45.0f, 90.0f));
+    QCOMPARE(execution.resultLine, QString("// Result: joint orientation updated on shoulder_jnt //"));
+
+    QVERIFY(registry.execute("jointOrient -reset shoulder_jnt;", context, &execution));
+    QCOMPARE(resetJoint, QString("shoulder_jnt"));
+    QCOMPARE(execution.resultLine, QString("// Result: reset joint orientation on shoulder_jnt //"));
+
+    QVERIFY(registry.execute("jointOrient shoulder_jnt -alignToChild;", context, &execution));
+    QCOMPARE(alignedJoint, QString("shoulder_jnt"));
+    QCOMPARE(execution.resultLine, QString("// Result: aligned joint orientation on shoulder_jnt //"));
+
+    QVERIFY(registry.execute("bindPose -capture -recursive shoulder_jnt;", context, &execution));
+    QCOMPARE(bindPoseJoint, QString("shoulder_jnt"));
+    QVERIFY(bindPoseRecursive);
+    QCOMPARE(execution.resultLine, QString("// Result: captured bind pose on shoulder_jnt recursively //"));
+}
+
+void EditorUiTests::hierarchyActionsParentAndUnparentJoints()
+{
+    MainWindow window;
+    window.show();
+    QTRY_VERIFY(window.isVisible());
+    QTest::qWait(200);
+
+    auto* createJointAction = window.findChild<QAction*>("createJointAction");
+    auto* markHierarchyParentAction = window.findChild<QAction*>("markHierarchyParentAction");
+    auto* parentToMarkedParentAction = window.findChild<QAction*>("parentToMarkedParentAction");
+    auto* unparentSelectedAction = window.findChild<QAction*>("unparentSelectedAction");
+    auto* outlinerTree = window.findChild<QTreeWidget*>("outlinerTree");
+
+    QVERIFY(createJointAction != nullptr);
+    QVERIFY(markHierarchyParentAction != nullptr);
+    QVERIFY(parentToMarkedParentAction != nullptr);
+    QVERIFY(unparentSelectedAction != nullptr);
+    QVERIFY(outlinerTree != nullptr);
+
+    createJointAction->trigger();
+    createJointAction->trigger();
+    QTRY_COMPARE(outlinerTree->topLevelItemCount(), 1);
+
+    QTreeWidgetItem* rootItem = outlinerTree->topLevelItem(0);
+    QVERIFY(rootItem != nullptr);
+    QTRY_COMPARE(rootItem->childCount(), 1);
+    QTreeWidgetItem* childItem = rootItem->child(0);
+    QVERIFY(childItem != nullptr);
+
+    outlinerTree->setCurrentItem(childItem);
+    QTRY_VERIFY(unparentSelectedAction->isEnabled());
+    unparentSelectedAction->trigger();
+
+    QTRY_COMPARE(outlinerTree->topLevelItemCount(), 2);
+    rootItem = outlinerTree->topLevelItem(0);
+    childItem = outlinerTree->topLevelItem(1);
+    QVERIFY(rootItem != nullptr);
+    QVERIFY(childItem != nullptr);
+
+    outlinerTree->setCurrentItem(rootItem);
+    QTRY_VERIFY(markHierarchyParentAction->isEnabled());
+    markHierarchyParentAction->trigger();
+
+    outlinerTree->setCurrentItem(childItem);
+    QTRY_VERIFY(parentToMarkedParentAction->isEnabled());
+    parentToMarkedParentAction->trigger();
+
+    QTRY_COMPARE(outlinerTree->topLevelItemCount(), 1);
+    rootItem = outlinerTree->topLevelItem(0);
+    QVERIFY(rootItem != nullptr);
+    QTRY_COMPARE(rootItem->childCount(), 1);
+}
+
+void EditorUiTests::jointInspectorEditsOrientationAndCapturesBindPose()
+{
+    MainWindow window;
+    window.show();
+    QTRY_VERIFY(window.isVisible());
+    QTest::qWait(200);
+
+    auto* createJointAction = window.findChild<QAction*>("createJointAction");
+    auto* outlinerTree = window.findChild<QTreeWidget*>("outlinerTree");
+    auto* channelObjectNameLabel = window.findChild<QLabel*>("channelObjectNameLabel");
+    auto* jointOrientYSpinBox = window.findChild<QDoubleSpinBox*>("jointOrientYSpinBox");
+    auto* alignJointOrientationButton = window.findChild<QPushButton*>("alignJointOrientationButton");
+    auto* captureBindPoseRecursiveButton = window.findChild<QPushButton*>("captureBindPoseRecursiveButton");
+    auto* bindPoseStatusLabel = window.findChild<QLabel*>("bindPoseStatusLabel");
+    auto* resetJointOrientationAction = window.findChild<QAction*>("resetJointOrientationAction");
+
+    QVERIFY(createJointAction != nullptr);
+    QVERIFY(outlinerTree != nullptr);
+    QVERIFY(channelObjectNameLabel != nullptr);
+    QVERIFY(jointOrientYSpinBox != nullptr);
+    QVERIFY(alignJointOrientationButton != nullptr);
+    QVERIFY(captureBindPoseRecursiveButton != nullptr);
+    QVERIFY(bindPoseStatusLabel != nullptr);
+    QVERIFY(resetJointOrientationAction != nullptr);
+
+    createJointAction->trigger();
+    createJointAction->trigger();
+    QTRY_COMPARE(outlinerTree->topLevelItemCount(), 1);
+
+    QTreeWidgetItem* rootItem = outlinerTree->topLevelItem(0);
+    QVERIFY(rootItem != nullptr);
+    outlinerTree->setCurrentItem(rootItem);
+    QTRY_COMPARE(channelObjectNameLabel->text(), rootItem->text(0));
+
+    QTRY_VERIFY(jointOrientYSpinBox->isEnabled());
+    jointOrientYSpinBox->setValue(45.0);
+    QTRY_COMPARE(jointOrientYSpinBox->value(), 45.0);
+
+    alignJointOrientationButton->click();
+    QVERIFY(resetJointOrientationAction->isEnabled());
+
+    captureBindPoseRecursiveButton->click();
+    QTRY_VERIFY(bindPoseStatusLabel->text().contains("captured", Qt::CaseInsensitive));
+}
+
+void EditorUiTests::hierarchyActionsExposeMayaLikeShortcuts()
+{
+    MainWindow window;
+
+    auto* parentToMarkedParentAction = window.findChild<QAction*>("parentToMarkedParentAction");
+    auto* unparentSelectedAction = window.findChild<QAction*>("unparentSelectedAction");
+
+    QVERIFY(parentToMarkedParentAction != nullptr);
+    QVERIFY(unparentSelectedAction != nullptr);
+    QCOMPARE(parentToMarkedParentAction->shortcut(), QKeySequence(Qt::Key_P));
+    QCOMPARE(unparentSelectedAction->shortcut(), QKeySequence(Qt::SHIFT | Qt::Key_P));
+}
+
+void EditorUiTests::leftMouseDragReparentsOutlinerItems()
+{
+    MainWindow window;
+    window.show();
+    QTRY_VERIFY(window.isVisible());
+    QTest::qWait(200);
+
+    auto* createJointAction = window.findChild<QAction*>("createJointAction");
+    auto* outlinerTree = window.findChild<QTreeWidget*>("outlinerTree");
+
+    QVERIFY(createJointAction != nullptr);
+    QVERIFY(outlinerTree != nullptr);
+
+    createJointAction->trigger();
+    createJointAction->trigger();
+    QTRY_COMPARE(outlinerTree->topLevelItemCount(), 1);
+
+    QTreeWidgetItem* rootItem = outlinerTree->topLevelItem(0);
+    QVERIFY(rootItem != nullptr);
+    QTRY_COMPARE(rootItem->childCount(), 1);
+    QTreeWidgetItem* childItem = rootItem->child(0);
+    QVERIFY(childItem != nullptr);
+
+    QWidget* viewport = outlinerTree->viewport();
+    QVERIFY(viewport != nullptr);
+
+    const QPoint childPoint = outlinerTree->visualItemRect(childItem).center();
+    const QPoint emptyPoint(viewport->rect().right() - 10, viewport->rect().bottom() - 10);
+    QTest::mousePress(viewport, Qt::LeftButton, Qt::NoModifier, childPoint);
+    QTest::mouseMove(viewport, emptyPoint, 30);
+    QTest::mouseRelease(viewport, Qt::LeftButton, Qt::NoModifier, emptyPoint);
+
+    QTRY_COMPARE(outlinerTree->topLevelItemCount(), 2);
+    rootItem = outlinerTree->topLevelItem(0);
+    childItem = outlinerTree->topLevelItem(1);
+    QVERIFY(rootItem != nullptr);
+    QVERIFY(childItem != nullptr);
+
+    const QPoint detachedChildPoint = outlinerTree->visualItemRect(childItem).center();
+    const QPoint rootPoint = outlinerTree->visualItemRect(rootItem).center();
+    QTest::mousePress(viewport, Qt::LeftButton, Qt::NoModifier, detachedChildPoint);
+    QTest::mouseMove(viewport, rootPoint, 30);
+    QTest::mouseRelease(viewport, Qt::LeftButton, Qt::NoModifier, rootPoint);
+
+    QTRY_COMPARE(outlinerTree->topLevelItemCount(), 1);
+    rootItem = outlinerTree->topLevelItem(0);
+    QVERIFY(rootItem != nullptr);
+    QTRY_COMPARE(rootItem->childCount(), 1);
 }
 
 void EditorUiTests::timelineUiShowsKeyframeFeedback()

@@ -25,6 +25,7 @@ Mục tiêu:
 * [ADR-006: FBX Import Uses Assimp for Beta](</E:/Animation Software/docs/adr/ADR-006-fbx-import-uses-assimp-for-beta.md>)
 * [ADR-007: Project Uses Feature-Oriented Folder Layout with Shared Core Layers](</E:/Animation Software/docs/adr/ADR-007-project-uses-feature-oriented-folder-layout-with-shared-core-layers.md>)
 * [ADR-008: Testing Strategy and Sample Asset Policy](</E:/Animation Software/docs/adr/ADR-008-testing-strategy-and-sample-asset-policy.md>)
+* [ADR-009: Joint Orientation Stays Separate From Animated Rotation](</E:/Animation Software/docs/adr/ADR-009-joint-orientation-stays-separate-from-animated-rotation.md>)
 
 ## Notes
 

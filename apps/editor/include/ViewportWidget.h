@@ -59,7 +59,12 @@ public:
     void setCurrentFrame(int frame);
     bool setObjectKeyframe(SceneObject::Id objectId, int frame);
     bool removeObjectKeyframe(SceneObject::Id objectId, int frame);
+    bool setJointOrientation(SceneObject::Id objectId, const QQuaternion& orientation);
+    bool resetJointOrientation(SceneObject::Id objectId);
+    bool alignJointOrientationToChild(SceneObject::Id objectId);
+    bool captureBindPose(SceneObject::Id objectId, bool recursive = false);
     SceneObject::Id createPrimitive(PrimitiveMeshFactory::Type type, const QString& name = {});
+    SceneObject::Id createJoint(const QString& name = {}, SceneObject::Id parentId = 0);
 
 protected:
     void initializeGL() override;

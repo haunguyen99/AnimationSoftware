@@ -20,10 +20,10 @@ Moi khi co thay doi lon, phai cap nhat file nay.
 
 Scope dang tap trung truoc mat:
 
-* `v0.2`
-* `editor shell`
-* inspect scene sau import
-* chuan bi nen cho phase animation sau
+* `v0.4`
+* `rigging foundation`
+* skeleton hierarchy authoring
+* parenting va joint orientation co ban
 
 ---
 
@@ -41,21 +41,23 @@ Tai lieu scope hien dung:
 
 Scope active hien tai:
 
-* `editor shell` nho, khong animation authoring
+* da co `scene workflow` va `animation data foundation`
 * co `Outliner`
-* co `Inspector`
-* co `Selection`
-* co `Frame Selected`
-* cung co import pipeline
-* chua co timeline
-* chua co rigging tools
-* chua co save/load
+* co `Channel Box`
+* co `Timeline`
+* co `Playback`
+* co `Script Editor`
+* co `save/load scene`
+* co `Set Key` / `Auto Key`
+* co import pipeline
+* da co `joint` / skeleton authoring foundation
+* da co parenting / unparenting / hierarchy drag trong `Outliner`
+* da co `joint orientation` basics va `bind pose` capture workflow
 
 Quy trinh feature chinh thuc:
 
 * [FEATURE_WORKFLOW.md](</E:/Animation Software/FEATURE_WORKFLOW.md>)
-* `Step 1 = Design only`
-* chua duyet design -> chua code
+* `v0.4` da qua `design -> implementation plan -> implementation phase 1`
 
 ---
 
@@ -75,6 +77,7 @@ ADR da chot:
 * `ADR-006` importer beta dung `Assimp`
 * `ADR-007` repo layout theo feature-oriented folders
 * `ADR-008` testing strategy + sample asset policy
+* `ADR-009` `joint orientation` tach khoi animated rotation
 
 ---
 
@@ -122,10 +125,24 @@ Da co:
 * selected object feedback bang viewport bounds overlay
 * import summary va import error message da duoc polish them
 * `FBX import module` da tach theo validation / parse adapter / scene builder / message formatting
+* `PrimitiveMeshFactory`
+* `ScriptCommandSystem`
+* `KeyframeTimelineWidget`
+* `PhoenixSceneDocument`
+* animation data model theo object
+* timeline + playback shell
+* `Set Key` / `Delete Key` / `Auto Key`
+* save/open scene workflow
+* export scene workflow
+* command support cho timeline, keyframe va file workflow
+* automated tests trong `tests/unit`
 
 Chua co:
 
-* tests tu dong that
+* skin bind / weight workflow
+* mesh deformation evaluation
+* orientation presets nang cao
+* dedicated rig panel ngoai `Channel Box`
 
 Da xong end-to-end:
 
@@ -154,6 +171,23 @@ Da xong end-to-end:
 * `Viewport Feedback` runtime test pass
 * `Import UX` runtime test pass
 * `FBX Import Module Refactor` build + runtime test pass
+* `Scene Workflow` save/open/export pass
+* `Animation Data Foundation` pass:
+  * keyframe data model
+  * per-object transform tracks
+  * playback evaluate animated transforms
+  * `Set Key` / `Auto Key` / `Delete Key`
+  * timeline key markers
+  * script commands cho key va playback
+* `Rigging Foundation v0.4 phase 1` pass:
+  * `joint` object model
+  * hierarchy parent / unparent + cycle reject
+  * keep-world-transform on reparent
+  * save/load `jointOrientation` + `bindPose`
+  * viewport skeleton visualization
+  * `joint`, `parent`, `unparent`, `jointOrient`, `bindPose` command paths
+  * `Channel Box` workflow cho orientation va bind pose capture
+* `ctest` trong `build/ninja-msvc-debug` pass `2/2`
 
 ---
 
@@ -182,7 +216,12 @@ Da xac nhan:
 
 Uu tien gan nhat:
 
-1. them test foundation cho `camera` / `bounds` / `scene append` / import validation
+1. manual QA them cho `v0.4 phase 1` trong app
+2. quyet scope `v0.4 phase 2` neu co:
+   * object -> joint socket workflow
+   * orientation preset / up-axis policy ro hon
+   * inspector polish cho rig authoring
+3. chuan bi design cho `v0.5 Skinning`
 
 ---
 

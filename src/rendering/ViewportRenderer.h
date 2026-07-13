@@ -53,6 +53,7 @@ private:
     void createSceneGeometry();
     void uploadGeometry();
     void uploadImportedMesh(const Scene& scene);
+    void uploadJointGeometry(const Scene& scene);
     void uploadSelectionBounds();
     void uploadGizmo();
 
@@ -60,17 +61,20 @@ private:
     std::unique_ptr<QOpenGLShaderProgram> shaderProgram_;
     QOpenGLVertexArrayObject vao_;
     QOpenGLVertexArrayObject importedVao_;
+    QOpenGLVertexArrayObject jointVao_;
     QOpenGLVertexArrayObject selectionVao_;
     QOpenGLVertexArrayObject gizmoVao_;
     QOpenGLBuffer vertexBuffer_;
     QOpenGLBuffer importedVertexBuffer_;
     QOpenGLBuffer importedIndexBuffer_;
+    QOpenGLBuffer jointVertexBuffer_;
     QOpenGLBuffer selectionVertexBuffer_;
     QOpenGLBuffer gizmoVertexBuffer_;
     QVector<Vertex> gridVertices_;
     QVector<Vertex> axisVertices_;
     QVector<Vertex> importedVertices_;
     QVector<std::uint32_t> importedIndices_;
+    QVector<Vertex> jointVertices_;
     QVector<Vertex> selectionVertices_;
     QVector<Vertex> gizmoVertices_;
     int viewportWidth_ = 1;

@@ -1,10 +1,12 @@
 #include <QMatrix4x4>
 #include <QQuaternion>
+#include <QTemporaryDir>
 #include <QVector3D>
 
 #include <cstdlib>
 #include <iostream>
 
+#include "io/PhoenixSceneDocument.h"
 #include "scene/Bounds3D.h"
 #include "scene/Scene.h"
 
@@ -167,6 +169,100 @@ int main()
 
     if (!fuzzyCompare(autoKeyObject->localTransform().translation, QVector3D())) {
         return fail("deleted key should fall back to remaining animation value");
+    }
+
+    Scene rigScene;
+    const SceneObject::Id rootJointId = rigScene.createJoint("root");
+    const SceneObject::Id childJointId = rigScene.createJoint("child", rootJointId);
+    SceneObject* rootJoint = rigScene.findObject(rootJointId);
+    SceneObject* childJoint = rigScene.findObject(childJointId);
+    if (rootJoint == nullptr || childJoint == nullptr) {
+        return fail("joint creation failed");
+    }
+
+    Transform rootJointTransform;
+    rootJointTransform.translation = QVector3D(1.0f, 0.0f, 0.0f);
+    if (!rigScene.setLocalTransform(rootJointId, rootJointTransform)) {
+        return fail("set root joint transform failed");
+    }
+
+    Transform childJointTransform;
+    childJointTransform.translation = QVector3D(0.0f, 3.0f, 0.0f);
+    if (!rigScene.setLocalTransform(childJointId, childJointTransform)) {
+        return fail("set child joint transform failed");
+    }
+
+    if (!rigScene.alignJointOrientationToChild(rootJointId)) {
+        return fail("align joint orientation failed");
+    }
+
+    if (rigScene.reparentObject(rootJointId, childJointId)) {
+        return fail("cycle reparent should fail");
+    }
+
+    rigScene.captureBindPose(rootJointId, true);
+    rootJoint = rigScene.findObject(rootJointId);
+    childJoint = rigScene.findObject(childJointId);
+    if (rootJoint == nullptr || childJoint == nullptr) {
+        return fail("joint lookup failed after bind pose");
+    }
+
+    if (!rootJoint->hasBindPose() || !childJoint->hasBindPose()) {
+        return fail("bind pose not captured");
+    }
+
+    const QVector3D childWorldBefore = rigScene.worldTransform(childJointId) * QVector3D(0.0f, 0.0f, 0.0f);
+    if (!rigScene.reparentObject(childJointId, 0)) {
+        return fail("joint unparent failed");
+    }
+
+    const QVector3D childWorldAfter = rigScene.worldTransform(childJointId) * QVector3D(0.0f, 0.0f, 0.0f);
+    if (!fuzzyCompare(childWorldBefore, childWorldAfter)) {
+        return fail("reparent should keep world transform");
+    }
+
+    const SceneObject* detachedJoint = rigScene.findObject(childJointId);
+    if (detachedJoint == nullptr || detachedJoint->parentId() != 0) {
+        return fail("joint parent not cleared");
+    }
+
+    QTemporaryDir tempDir;
+    if (!tempDir.isValid()) {
+        return fail("temporary directory unavailable");
+    }
+
+    const QString scenePath = tempDir.filePath("rig_scene.phoenixscene");
+    QString saveError;
+    if (!PhoenixSceneDocument::saveToFile(rigScene, scenePath, &saveError)) {
+        std::cerr << saveError.toStdString() << '\n';
+        return fail("save rig scene failed");
+    }
+
+    const PhoenixSceneDocument::LoadResult loadResult = PhoenixSceneDocument::loadFromFile(scenePath);
+    if (!loadResult.success) {
+        std::cerr << loadResult.errorMessage.toStdString() << '\n';
+        return fail("load rig scene failed");
+    }
+
+    const Scene loadedRigScene = loadResult.scene;
+    const SceneObject* loadedRoot = nullptr;
+    for (SceneObject::Id objectId : loadedRigScene.allObjectIds()) {
+        const SceneObject* object = loadedRigScene.findObject(objectId);
+        if (object != nullptr && object->name() == "root") {
+            loadedRoot = object;
+            break;
+        }
+    }
+    if (loadedRoot == nullptr || !loadedRoot->isJoint()) {
+        return fail("loaded root joint missing");
+    }
+
+    if (!loadedRoot->hasBindPose()) {
+        return fail("loaded root bind pose missing");
+    }
+
+    if (loadedRoot->jointOrientation().isIdentity()) {
+        return fail("loaded joint orientation missing");
     }
 
     return EXIT_SUCCESS;
