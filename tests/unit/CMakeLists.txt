@@ -28,10 +28,14 @@ add_test(
 
 add_executable(editor_ui_tests
     EditorUiTests.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorDocumentController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorHistoryController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorSceneMutationController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/KeyframeTimelineWidget.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/MainWindow.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/ScriptCommandSystem.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/ViewportWidget.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/ViewportWorkspaceWidget.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/Bounds3D.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/SceneObject.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/Scene.cpp

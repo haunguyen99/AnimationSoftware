@@ -34,9 +34,12 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 
+#include "EditorDocumentController.h"
 #include "KeyframeTimelineWidget.h"
-#include "ViewportWidget.h"
+#include "EditorSceneMutationController.h"
+#include "ViewportWorkspaceWidget.h"
 #include "io/PhoenixSceneDocument.h"
+#include "logging/LogCategories.h"
 #include "scene/PrimitiveMeshFactory.h"
 #include "scene/Scene.h"
 #include "scene/SceneObject.h"
@@ -84,6 +87,19 @@ QString formatBindPoseStatus(const SceneObject& object)
     return object.hasBindPose()
         ? QString("Bind pose captured: %1").arg(formatTransform(object.bindPoseLocalTransform()))
         : "Bind pose: not captured";
+}
+
+QString formatSkinBindingStatus(const SceneObject& object)
+{
+    if (object.meshHandles().isEmpty()) {
+        return "Skin binding: n/a";
+    }
+
+    return object.hasSkinBinding()
+        ? QString("Skin binding: %1 joints, %2 weighted vertices")
+              .arg(object.skinJointIds().size())
+              .arg(object.skinWeights().size())
+        : "Skin binding: not bound";
 }
 
 QDoubleSpinBox* createChannelSpinBox(QWidget* parent)
@@ -160,7 +176,7 @@ MainWindow::MainWindow()
         | QMainWindow::GroupedDragging
         | QMainWindow::AnimatedDocks);
 
-    viewport_ = new ViewportWidget(this);
+    viewport_ = new ViewportWorkspaceWidget(this);
     playbackTimer_ = new QTimer(this);
     playbackTimer_->setInterval(1000 / 24);
     QObject::connect(playbackTimer_, &QTimer::timeout, this, &MainWindow::advancePlayback);
@@ -172,7 +188,7 @@ MainWindow::MainWindow()
             return;
         }
 
-        if (const SceneObject* object = viewport_->scene().findObject(objectId)) {
+        if (const SceneObject* object = viewport_->findObject(objectId)) {
             logSelectionToScriptEditor(objectId);
             statusBar()->showMessage(QString("Selected: %1").arg(objectDisplayName(*object)), 2000);
         }
@@ -181,13 +197,18 @@ MainWindow::MainWindow()
         selectObject(objectId, true);
         statusBar()->showMessage("Object transform updated", 1500);
     });
+    viewport_->setBeforeSceneMutationCallback([this]() {
+        if (!restoringHistory_) {
+            recordUndoState();
+        }
+    });
 
     createMenus();
-    createToolbar();
     createDocks();
     loadPreferences();
     updateWindowTitle();
     clearInspector();
+    updateUndoRedoActions();
     statusBar()->showMessage("Ready");
 }
 
@@ -239,6 +260,19 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
 
 void MainWindow::createMenus()
 {
+    QMenu* editMenu = menuBar()->addMenu("&Edit");
+    undoAction_ = editMenu->addAction("Undo");
+    undoAction_->setObjectName("undoAction");
+    undoAction_->setShortcut(QKeySequence::Undo);
+    QObject::connect(undoAction_, &QAction::triggered, this, &MainWindow::undoLastChange);
+
+    redoAction_ = editMenu->addAction("Redo");
+    redoAction_->setObjectName("redoAction");
+    redoAction_->setShortcut(QKeySequence::Redo);
+    QObject::connect(redoAction_, &QAction::triggered, this, &MainWindow::redoLastChange);
+
+    editMenu->addSeparator();
+
     QMenu* fileMenu = menuBar()->addMenu("&File");
     newSceneAction_ = fileMenu->addAction("New Scene");
     newSceneAction_->setShortcut(QKeySequence::New);
@@ -311,6 +345,11 @@ void MainWindow::createMenus()
     unparentSelectedAction_->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_P));
     QObject::connect(unparentSelectedAction_, &QAction::triggered, this, &MainWindow::unparentSelection);
 
+    bindSkinAction_ = rigMenu->addAction("Bind Selected Mesh To Marked Joint");
+    bindSkinAction_->setObjectName("bindSkinAction");
+    bindSkinAction_->setEnabled(false);
+    QObject::connect(bindSkinAction_, &QAction::triggered, this, &MainWindow::bindSelectedMeshToMarkedJoint);
+
     rigMenu->addSeparator();
     resetJointOrientationAction_ = rigMenu->addAction("Reset Joint Orientation");
     resetJointOrientationAction_->setObjectName("resetJointOrientationAction");
@@ -337,6 +376,36 @@ void MainWindow::createMenus()
     scriptEditorAction_->setObjectName("scriptEditorAction");
     QObject::connect(scriptEditorAction_, &QAction::triggered, this, &MainWindow::showScriptEditorWindow);
 
+    QMenu* animationMenu = menuBar()->addMenu("&Animation");
+    duplicateKeyAction_ = animationMenu->addAction("Duplicate Current Key");
+    duplicateKeyAction_->setObjectName("duplicateKeyAction");
+    duplicateKeyAction_->setEnabled(false);
+    duplicateKeyAction_->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_D));
+    QObject::connect(duplicateKeyAction_, &QAction::triggered, this, [this]() { duplicateCurrentKeyForSelection(true); });
+
+    shiftKeysLeftAction_ = animationMenu->addAction("Shift Keys Left");
+    shiftKeysLeftAction_->setObjectName("shiftKeysLeftAction");
+    shiftKeysLeftAction_->setEnabled(false);
+    QObject::connect(shiftKeysLeftAction_, &QAction::triggered, this, [this]() { shiftSelectedObjectKeyframes(-1, true); });
+
+    shiftKeysRightAction_ = animationMenu->addAction("Shift Keys Right");
+    shiftKeysRightAction_->setObjectName("shiftKeysRightAction");
+    shiftKeysRightAction_->setEnabled(false);
+    QObject::connect(shiftKeysRightAction_, &QAction::triggered, this, [this]() { shiftSelectedObjectKeyframes(1, true); });
+
+    animationMenu->addSeparator();
+    previousKeyAction_ = animationMenu->addAction("Previous Key");
+    previousKeyAction_->setObjectName("previousKeyAction");
+    previousKeyAction_->setEnabled(false);
+    previousKeyAction_->setShortcut(QKeySequence(Qt::Key_Comma));
+    QObject::connect(previousKeyAction_, &QAction::triggered, this, [this]() { jumpToSelectedObjectKeyframe(false, true); });
+
+    nextKeyAction_ = animationMenu->addAction("Next Key");
+    nextKeyAction_->setObjectName("nextKeyAction");
+    nextKeyAction_->setEnabled(false);
+    nextKeyAction_->setShortcut(QKeySequence(Qt::Key_Period));
+    QObject::connect(nextKeyAction_, &QAction::triggered, this, [this]() { jumpToSelectedObjectKeyframe(true, true); });
+
     QMenu* viewMenu = menuBar()->addMenu("&View");
 
     resetCameraAction_ = viewMenu->addAction("Reset Camera");
@@ -358,6 +427,39 @@ void MainWindow::createMenus()
     frameSelectedAction_ = viewMenu->addAction("Frame Selected");
     frameSelectedAction_->setEnabled(false);
     QObject::connect(frameSelectedAction_, &QAction::triggered, this, &MainWindow::frameSelectedObject);
+
+    viewMenu->addSeparator();
+    QMenu* camerasMenu = viewMenu->addMenu("Cameras");
+    perspectiveCameraAction_ = camerasMenu->addAction("Perspective");
+    perspectiveCameraAction_->setObjectName("perspectiveCameraAction");
+    perspectiveCameraAction_->setCheckable(true);
+    frontCameraAction_ = camerasMenu->addAction("Front");
+    frontCameraAction_->setObjectName("frontCameraAction");
+    frontCameraAction_->setCheckable(true);
+    backCameraAction_ = camerasMenu->addAction("Back");
+    backCameraAction_->setObjectName("backCameraAction");
+    backCameraAction_->setCheckable(true);
+    leftCameraAction_ = camerasMenu->addAction("Left");
+    leftCameraAction_->setObjectName("leftCameraAction");
+    leftCameraAction_->setCheckable(true);
+    rightCameraAction_ = camerasMenu->addAction("Right");
+    rightCameraAction_->setObjectName("rightCameraAction");
+    rightCameraAction_->setCheckable(true);
+    topCameraAction_ = camerasMenu->addAction("Top");
+    topCameraAction_->setObjectName("topCameraAction");
+    topCameraAction_->setCheckable(true);
+    bottomCameraAction_ = camerasMenu->addAction("Bottom");
+    bottomCameraAction_->setObjectName("bottomCameraAction");
+    bottomCameraAction_->setCheckable(true);
+
+    QObject::connect(perspectiveCameraAction_, &QAction::triggered, this, [this]() { setViewCameraPreset(ViewCameraUiPreset::Perspective); });
+    QObject::connect(frontCameraAction_, &QAction::triggered, this, [this]() { setViewCameraPreset(ViewCameraUiPreset::Front); });
+    QObject::connect(backCameraAction_, &QAction::triggered, this, [this]() { setViewCameraPreset(ViewCameraUiPreset::Back); });
+    QObject::connect(leftCameraAction_, &QAction::triggered, this, [this]() { setViewCameraPreset(ViewCameraUiPreset::Left); });
+    QObject::connect(rightCameraAction_, &QAction::triggered, this, [this]() { setViewCameraPreset(ViewCameraUiPreset::Right); });
+    QObject::connect(topCameraAction_, &QAction::triggered, this, [this]() { setViewCameraPreset(ViewCameraUiPreset::Top); });
+    QObject::connect(bottomCameraAction_, &QAction::triggered, this, [this]() { setViewCameraPreset(ViewCameraUiPreset::Bottom); });
+    setViewCameraPreset(ViewCameraUiPreset::Perspective);
 
     wireframeAction_ = viewMenu->addAction("Wireframe");
     wireframeAction_->setCheckable(true);
@@ -452,14 +554,9 @@ void MainWindow::createToolbar()
 
 void MainWindow::createDocks()
 {
-    setCentralWidget(new QWidget(this));
-
-    viewportDock_ = new QDockWidget("Viewport", this);
-    viewportDock_->setObjectName("ViewportDock");
-    viewportDock_->setAllowedAreas(Qt::AllDockWidgetAreas);
-    viewportDock_->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
-    viewportDock_->setWidget(viewport_);
-    addDockWidget(Qt::LeftDockWidgetArea, viewportDock_);
+    viewport_->setObjectName("viewportWidget");
+    setCentralWidget(viewport_);
+    viewportDock_ = nullptr;
 
     outlinerDock_ = new QDockWidget("Outliner", this);
     outlinerDock_->setObjectName("OutlinerDock");
@@ -475,9 +572,7 @@ void MainWindow::createDocks()
     inspectorDock_->setWidget(createInspectorPanel());
     addDockWidget(Qt::RightDockWidgetArea, inspectorDock_);
 
-    splitDockWidget(outlinerDock_, viewportDock_, Qt::Horizontal);
-    splitDockWidget(viewportDock_, inspectorDock_, Qt::Horizontal);
-    resizeDocks({ outlinerDock_, viewportDock_, inspectorDock_ }, { 280, 920, 320 }, Qt::Horizontal);
+    resizeDocks({ outlinerDock_, inspectorDock_ }, { 280, 320 }, Qt::Horizontal);
 
     polygonPrimitivesDock_ = new QDockWidget("Polygon Primitives", this);
     polygonPrimitivesDock_->setObjectName("PolygonPrimitivesDock");
@@ -688,6 +783,11 @@ QWidget* MainWindow::createInspectorPanel()
     bindPoseStatusLabel_->setWordWrap(true);
     jointToolsLayout->addWidget(bindPoseStatusLabel_);
 
+    skinBindingStatusLabel_ = new QLabel("Skin binding: n/a", jointToolsWidget_);
+    skinBindingStatusLabel_->setObjectName("skinBindingStatusLabel");
+    skinBindingStatusLabel_->setWordWrap(true);
+    jointToolsLayout->addWidget(skinBindingStatusLabel_);
+
     resetJointOrientationButton_ = new QPushButton("Reset Orientation", jointToolsWidget_);
     resetJointOrientationButton_->setObjectName("resetJointOrientationButton");
     alignJointOrientationButton_ = new QPushButton("Align To First Child", jointToolsWidget_);
@@ -788,6 +888,18 @@ QWidget* MainWindow::createTimeSliderPanel()
     deleteKeyButton_->setObjectName("deleteKeyButton");
     deleteKeyButton_->setEnabled(false);
     topRow->addWidget(deleteKeyButton_);
+    duplicateKeyButton_ = new QPushButton("Duplicate Key", panel);
+    duplicateKeyButton_->setObjectName("duplicateKeyButton");
+    duplicateKeyButton_->setEnabled(false);
+    topRow->addWidget(duplicateKeyButton_);
+    shiftKeysLeftButton_ = new QPushButton("Shift -1", panel);
+    shiftKeysLeftButton_->setObjectName("shiftKeysLeftButton");
+    shiftKeysLeftButton_->setEnabled(false);
+    topRow->addWidget(shiftKeysLeftButton_);
+    shiftKeysRightButton_ = new QPushButton("Shift +1", panel);
+    shiftKeysRightButton_->setObjectName("shiftKeysRightButton");
+    shiftKeysRightButton_->setEnabled(false);
+    topRow->addWidget(shiftKeysRightButton_);
     topRow->addWidget(new QLabel("Current", panel));
     topRow->addWidget(currentFrameSpinBox_);
 
@@ -832,19 +944,25 @@ QWidget* MainWindow::createTimeSliderPanel()
 
     QPushButton* jumpStartButton = createTransportButton("|<", panel);
     jumpStartButton->setObjectName("jumpStartButton");
+    previousKeyButton_ = createTransportButton("<<", panel);
+    previousKeyButton_->setObjectName("previousKeyButton");
     QPushButton* stepBackButton = createTransportButton("<", panel);
     stepBackButton->setObjectName("stepBackButton");
     playPauseButton_ = createTransportButton(">", panel);
     playPauseButton_->setObjectName("playPauseButton");
     QPushButton* stepForwardButton = createTransportButton(">", panel);
     stepForwardButton->setObjectName("stepForwardButton");
+    nextKeyButton_ = createTransportButton(">>", panel);
+    nextKeyButton_->setObjectName("nextKeyButton");
     QPushButton* jumpEndButton = createTransportButton(">|", panel);
     jumpEndButton->setObjectName("jumpEndButton");
 
     controlsRow->addWidget(jumpStartButton);
+    controlsRow->addWidget(previousKeyButton_);
     controlsRow->addWidget(stepBackButton);
     controlsRow->addWidget(playPauseButton_);
     controlsRow->addWidget(stepForwardButton);
+    controlsRow->addWidget(nextKeyButton_);
     controlsRow->addWidget(jumpEndButton);
 
     QObject::connect(playbackStartSpinBox_, qOverload<int>(&QSpinBox::valueChanged), this, [this](int) {
@@ -871,9 +989,14 @@ QWidget* MainWindow::createTimeSliderPanel()
     QObject::connect(stepBackButton, &QPushButton::clicked, this, [this]() { stepFrame(-1); });
     QObject::connect(playPauseButton_, &QPushButton::clicked, this, &MainWindow::togglePlayback);
     QObject::connect(stepForwardButton, &QPushButton::clicked, this, [this]() { stepFrame(1); });
+    QObject::connect(previousKeyButton_, &QPushButton::clicked, this, [this]() { jumpToSelectedObjectKeyframe(false, true); });
+    QObject::connect(nextKeyButton_, &QPushButton::clicked, this, [this]() { jumpToSelectedObjectKeyframe(true, true); });
     QObject::connect(jumpEndButton, &QPushButton::clicked, this, [this]() { setCurrentFrame(playbackEndFrame_); });
     QObject::connect(setKeyButton_, &QPushButton::clicked, this, [this]() { setKeyForSelection(true); });
     QObject::connect(deleteKeyButton_, &QPushButton::clicked, this, [this]() { deleteKeyForSelection(true); });
+    QObject::connect(duplicateKeyButton_, &QPushButton::clicked, this, [this]() { duplicateCurrentKeyForSelection(true); });
+    QObject::connect(shiftKeysLeftButton_, &QPushButton::clicked, this, [this]() { shiftSelectedObjectKeyframes(-1, true); });
+    QObject::connect(shiftKeysRightButton_, &QPushButton::clicked, this, [this]() { shiftSelectedObjectKeyframes(1, true); });
     QObject::connect(autoKeyButton_, &QPushButton::toggled, this, [this](bool enabled) { setAutoKeyEnabled(enabled, true); });
 
     rootLayout->addLayout(topRow);
@@ -975,13 +1098,14 @@ bool MainWindow::saveSceneAs()
 
 bool MainWindow::openSceneFromPath(const QString& filePath, bool logToScript)
 {
-    const PhoenixSceneDocument::LoadResult result = PhoenixSceneDocument::loadFromFile(filePath);
+    const EditorDocumentController::LoadSceneResult result = EditorDocumentController::loadScene(filePath);
     if (!result.success) {
         QMessageBox::warning(this, "Open Scene", result.errorMessage);
         statusBar()->showMessage("Open scene failed", 3000);
         return false;
     }
 
+    recordUndoState();
     viewport_->replaceScene(result.scene);
     setCurrentFrame(viewport_->currentFrame(), false);
     currentSceneFilePath_ = filePath;
@@ -1025,9 +1149,9 @@ bool MainWindow::saveSceneToPath(const QString& filePath, bool logToScript)
         return false;
     }
 
-    QString errorMessage;
-    if (!PhoenixSceneDocument::saveToFile(viewport_->scene(), targetPath, &errorMessage)) {
-        QMessageBox::warning(this, "Save Scene", errorMessage);
+    const EditorDocumentController::OperationResult result = EditorDocumentController::saveScene(viewport_->scene(), targetPath);
+    if (!result.success) {
+        QMessageBox::warning(this, "Save Scene", result.errorMessage);
         statusBar()->showMessage("Save scene failed", 3000);
         return false;
     }
@@ -1107,9 +1231,9 @@ bool MainWindow::exportAll()
         return false;
     }
 
-    QString errorMessage;
-    if (!PhoenixSceneDocument::saveToFile(viewport_->scene(), filePath, &errorMessage)) {
-        QMessageBox::warning(this, "Export All", errorMessage);
+    const EditorDocumentController::OperationResult result = EditorDocumentController::exportAll(viewport_->scene(), filePath);
+    if (!result.success) {
+        QMessageBox::warning(this, "Export All", result.errorMessage);
         statusBar()->showMessage("Export failed", 3000);
         return false;
     }
@@ -1138,10 +1262,10 @@ bool MainWindow::exportSelection()
         return false;
     }
 
-    const Scene exportScene = buildExportSceneForObject(selectedObjectId_);
-    QString errorMessage;
-    if (!PhoenixSceneDocument::saveToFile(exportScene, filePath, &errorMessage)) {
-        QMessageBox::warning(this, "Export Selection", errorMessage);
+    const EditorDocumentController::OperationResult result =
+        EditorDocumentController::exportSelection(viewport_->scene(), selectedObjectId_, filePath);
+    if (!result.success) {
+        QMessageBox::warning(this, "Export Selection", result.errorMessage);
         statusBar()->showMessage("Export selection failed", 3000);
         return false;
     }
@@ -1241,7 +1365,7 @@ void MainWindow::markSelectionAsHierarchyParent()
         return;
     }
 
-    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
     if (object == nullptr) {
         statusBar()->showMessage("Selected object is no longer available", 1500);
         return;
@@ -1276,7 +1400,7 @@ void MainWindow::unparentSelection()
         return;
     }
 
-    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
     if (object == nullptr) {
         statusBar()->showMessage("Selected object is no longer available", 1500);
         return;
@@ -1290,6 +1414,47 @@ void MainWindow::unparentSelection()
     reparentObjectInUi(selectedObjectId_, 0);
 }
 
+void MainWindow::bindSelectedMeshToMarkedJoint()
+{
+    if (selectedObjectId_ == 0 || markedHierarchyParentId_ == 0) {
+        statusBar()->showMessage("Select a mesh and mark a joint first", 1500);
+        return;
+    }
+
+    const SceneObject* meshObject = viewport_->findObject(selectedObjectId_);
+    const SceneObject* jointObject = viewport_->findObject(markedHierarchyParentId_);
+    if (meshObject == nullptr || jointObject == nullptr) {
+        statusBar()->showMessage("Bind target is no longer available", 1500);
+        return;
+    }
+
+    if (meshObject->meshHandles().isEmpty()) {
+        statusBar()->showMessage("Selected object has no mesh to bind", 1500);
+        return;
+    }
+
+    if (!jointObject->isJoint()) {
+        statusBar()->showMessage("Marked object is not a joint", 1500);
+        return;
+    }
+
+    Scene updatedScene = viewport_->sceneSnapshot();
+    if (!updatedScene.bindObjectToSkeleton(selectedObjectId_, markedHierarchyParentId_)) {
+        statusBar()->showMessage("Bind skin failed", 1500);
+        return;
+    }
+
+    const QString meshName = objectDisplayName(*meshObject);
+    const QString jointName = objectDisplayName(*jointObject);
+    recordUndoState();
+    viewport_->replaceScene(updatedScene);
+    refreshScenePanels();
+    selectObject(selectedObjectId_, true);
+    appendScriptHistoryLine(QString("bindSkin %1 %2;").arg(meshName, jointName));
+    appendScriptHistoryLine(QString("// Result: bound %1 to %2 //").arg(meshName, jointName));
+    statusBar()->showMessage(QString("Bound %1 to %2").arg(meshName, jointName), 2000);
+}
+
 void MainWindow::resetSelectedJointOrientation()
 {
     if (selectedObjectId_ == 0) {
@@ -1297,7 +1462,7 @@ void MainWindow::resetSelectedJointOrientation()
         return;
     }
 
-    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
     if (object == nullptr || !object->isJoint()) {
         statusBar()->showMessage("Selected object is not a joint", 1500);
         return;
@@ -1321,7 +1486,7 @@ void MainWindow::alignSelectedJointOrientationToChild()
         return;
     }
 
-    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
     if (object == nullptr || !object->isJoint()) {
         statusBar()->showMessage("Selected object is not a joint", 1500);
         return;
@@ -1345,7 +1510,7 @@ void MainWindow::captureSelectedBindPose()
         return;
     }
 
-    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
     if (object == nullptr || !object->isJoint()) {
         statusBar()->showMessage("Selected object is not a joint", 1500);
         return;
@@ -1369,7 +1534,7 @@ void MainWindow::captureSelectedBindPoseRecursive()
         return;
     }
 
-    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
     if (object == nullptr || !object->isJoint()) {
         statusBar()->showMessage("Selected object is not a joint", 1500);
         return;
@@ -1388,8 +1553,8 @@ void MainWindow::captureSelectedBindPoseRecursive()
 
 bool MainWindow::reparentObjectInUi(std::uint64_t childId, std::uint64_t newParentId, bool logToScript)
 {
-    const SceneObject* childObject = viewport_->scene().findObject(childId);
-    const SceneObject* parentObject = newParentId == 0 ? nullptr : viewport_->scene().findObject(newParentId);
+    const SceneObject* childObject = viewport_->findObject(childId);
+    const SceneObject* parentObject = newParentId == 0 ? nullptr : viewport_->findObject(newParentId);
     if (childObject == nullptr || (newParentId != 0 && parentObject == nullptr)) {
         statusBar()->showMessage("Hierarchy target is no longer available", 1500);
         return false;
@@ -1403,12 +1568,13 @@ bool MainWindow::reparentObjectInUi(std::uint64_t childId, std::uint64_t newPare
     const QString childName = objectDisplayName(*childObject);
     const QString parentName = parentObject == nullptr ? QString() : objectDisplayName(*parentObject);
 
-    Scene updatedScene = viewport_->scene();
+    Scene updatedScene = viewport_->sceneSnapshot();
     if (!updatedScene.reparentObject(childId, newParentId)) {
         statusBar()->showMessage(newParentId == 0 ? "Unparent operation failed" : "Parent operation failed", 1500);
         return false;
     }
 
+    recordUndoState();
     viewport_->replaceScene(updatedScene);
     refreshScenePanels();
     selectObject(childId, true);
@@ -1572,13 +1738,15 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
             return QString();
         }
 
-        Scene updatedScene = viewport_->scene();
         const QString uniqueName = generateUniqueObjectName(newName.trimmed(), objectId);
-        if (!updatedScene.setObjectName(objectId, uniqueName)) {
+        const EditorSceneMutationController::MutationResult mutation =
+            EditorSceneMutationController::renameObject(viewport_->sceneSnapshot(), objectId, uniqueName);
+        if (!mutation.success) {
             return QString();
         }
 
-        viewport_->replaceScene(updatedScene);
+        recordUndoState();
+        viewport_->replaceScene(mutation.scene);
         refreshScenePanels();
         selectObject(objectId, true);
         return uniqueName;
@@ -1589,27 +1757,23 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
             return QString();
         }
 
-        Scene updatedScene = viewport_->scene();
-        const SceneObject* sourceObject = updatedScene.findObject(objectId);
+        const SceneObject* sourceObject = viewport_->findObject(objectId);
         if (sourceObject == nullptr) {
             return QString();
         }
 
         const QString sourceObjectName = sourceObject->name();
-
-        const SceneObject::Id duplicateId = updatedScene.duplicateSubtree(objectId);
-        SceneObject* duplicateObject = updatedScene.findObject(duplicateId);
-        if (duplicateObject == nullptr) {
+        const QString duplicateName = generateUniqueObjectName(QString("%1Copy").arg(sourceObjectName));
+        const EditorSceneMutationController::MutationResult mutation =
+            EditorSceneMutationController::duplicateObject(viewport_->sceneSnapshot(), objectId, duplicateName);
+        if (!mutation.success) {
             return QString();
         }
 
-        const QString duplicateName = generateUniqueObjectName(QString("%1Copy").arg(sourceObjectName));
-        duplicateObject->setName(duplicateName);
-        updatedScene.rebuildWorldData();
-
-        viewport_->replaceScene(updatedScene);
+        recordUndoState();
+        viewport_->replaceScene(mutation.scene);
         refreshScenePanels();
-        selectObject(duplicateId, true);
+        selectObject(mutation.affectedObjectId, true);
         return duplicateName;
     };
     context.groupObject = [this](const QString& sourceName) {
@@ -1618,34 +1782,17 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
             return QString();
         }
 
-        Scene updatedScene = viewport_->scene();
-        const SceneObject* sourceObject = updatedScene.findObject(objectId);
-        if (sourceObject == nullptr) {
-            return QString();
-        }
-
-        const SceneObject::Id sourceParentId = sourceObject->parentId();
-
         const QString groupName = generateUniqueObjectName("group");
-        const SceneObject::Id groupId = updatedScene.createObject(groupName);
-        SceneObject* groupObject = updatedScene.findObject(groupId);
-        if (groupObject == nullptr) {
+        const EditorSceneMutationController::MutationResult mutation =
+            EditorSceneMutationController::groupObject(viewport_->sceneSnapshot(), objectId, groupName);
+        if (!mutation.success) {
             return QString();
         }
 
-        groupObject->setAuthoredTransform(Transform());
-        groupObject->setLocalTransform(Transform());
-        groupObject->setVisible(true);
-        if (!updatedScene.reparentObject(groupId, sourceParentId)) {
-            return QString();
-        }
-        if (!updatedScene.reparentObject(objectId, groupId)) {
-            return QString();
-        }
-
-        viewport_->replaceScene(updatedScene);
+        recordUndoState();
+        viewport_->replaceScene(mutation.scene);
         refreshScenePanels();
-        selectObject(groupId, true);
+        selectObject(mutation.affectedObjectId, true);
         return groupName;
     };
     context.deleteObject = [this](const QString& sourceName) {
@@ -1654,12 +1801,14 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
             return false;
         }
 
-        Scene updatedScene = viewport_->scene();
-        if (!updatedScene.removeObject(objectId)) {
+        const EditorSceneMutationController::MutationResult mutation =
+            EditorSceneMutationController::deleteObject(viewport_->sceneSnapshot(), objectId);
+        if (!mutation.success) {
             return false;
         }
 
-        viewport_->replaceScene(updatedScene);
+        recordUndoState();
+        viewport_->replaceScene(mutation.scene);
         refreshScenePanels();
         clearInspector();
         return true;
@@ -1671,12 +1820,14 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
             return false;
         }
 
-        Scene updatedScene = viewport_->scene();
-        if (!updatedScene.reparentObject(childId, parentId)) {
+        const EditorSceneMutationController::MutationResult mutation =
+            EditorSceneMutationController::reparentObject(viewport_->sceneSnapshot(), childId, parentId);
+        if (!mutation.success) {
             return false;
         }
 
-        viewport_->replaceScene(updatedScene);
+        recordUndoState();
+        viewport_->replaceScene(mutation.scene);
         refreshScenePanels();
         selectObject(childId, true);
         return true;
@@ -1687,14 +1838,35 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
             return false;
         }
 
-        Scene updatedScene = viewport_->scene();
-        if (!updatedScene.reparentObject(childId, 0)) {
+        const EditorSceneMutationController::MutationResult mutation =
+            EditorSceneMutationController::reparentObject(viewport_->sceneSnapshot(), childId, 0);
+        if (!mutation.success) {
             return false;
         }
 
-        viewport_->replaceScene(updatedScene);
+        recordUndoState();
+        viewport_->replaceScene(mutation.scene);
         refreshScenePanels();
         selectObject(childId, true);
+        return true;
+    };
+    context.bindSkin = [this](const QString& meshName, const QString& jointName) {
+        const std::uint64_t meshId = findObjectIdByName(meshName);
+        const std::uint64_t jointId = findObjectIdByName(jointName);
+        if (meshId == 0 || jointId == 0) {
+            return false;
+        }
+
+        const EditorSceneMutationController::MutationResult mutation =
+            EditorSceneMutationController::bindSkin(viewport_->sceneSnapshot(), meshId, jointId);
+        if (!mutation.success) {
+            return false;
+        }
+
+        recordUndoState();
+        viewport_->replaceScene(mutation.scene);
+        refreshScenePanels();
+        selectObject(meshId, true);
         return true;
     };
     context.setJointOrientation = [this](const QString& objectName, const QVector3D& eulerDegrees) {
@@ -1759,7 +1931,7 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
             return false;
         }
 
-        const SceneObject* object = viewport_->scene().findObject(objectId);
+        const SceneObject* object = viewport_->findObject(objectId);
         if (object == nullptr) {
             return false;
         }
@@ -1776,7 +1948,7 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
 
             if (objectId == selectedObjectId_) {
                 updateChannelBox(objectId);
-                const SceneObject* updatedObject = viewport_->scene().findObject(objectId);
+                const SceneObject* updatedObject = viewport_->findObject(objectId);
                 const bool canFrame = updatedObject != nullptr && updatedObject->isVisible() && updatedObject->worldBounds().isValid();
                 frameSelectedButton_->setEnabled(canFrame);
                 frameSelectedAction_->setEnabled(canFrame);
@@ -1917,6 +2089,42 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
 
         return viewport_->removeObjectKeyframe(objectId, currentFrame_);
     };
+    context.copyKeyframe = [this](const QString& objectName, int sourceFrame, int targetFrame) {
+        const std::uint64_t objectId = findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        Scene updatedScene = viewport_->sceneSnapshot();
+        if (!updatedScene.duplicateObjectKeyframe(objectId, sourceFrame, targetFrame)) {
+            return false;
+        }
+
+        recordUndoState();
+        viewport_->replaceScene(updatedScene);
+        refreshScenePanels();
+        selectObject(objectId, true);
+        setCurrentFrame(targetFrame, false);
+        return true;
+    };
+    context.shiftKeyframes = [this](const QString& objectName, int frameDelta) {
+        const std::uint64_t objectId = findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        Scene updatedScene = viewport_->sceneSnapshot();
+        if (!updatedScene.offsetObjectKeyframes(objectId, frameDelta)) {
+            return false;
+        }
+
+        recordUndoState();
+        viewport_->replaceScene(updatedScene);
+        refreshScenePanels();
+        selectObject(objectId, true);
+        setCurrentFrame(currentFrame_ + frameDelta, false);
+        return true;
+    };
     context.setAutoKey = [this](bool enabled) {
         setAutoKeyEnabled(enabled, false);
     };
@@ -1941,8 +2149,8 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
 
 std::uint64_t MainWindow::findObjectIdByName(const QString& objectName) const
 {
-    for (std::uint64_t objectId : viewport_->scene().allObjectIds()) {
-        const SceneObject* object = viewport_->scene().findObject(objectId);
+    for (std::uint64_t objectId : viewport_->allObjectIds()) {
+        const SceneObject* object = viewport_->findObject(objectId);
         if (object != nullptr && objectDisplayName(*object) == objectName) {
             return objectId;
         }
@@ -1963,12 +2171,12 @@ QString MainWindow::generateUniqueScriptName(const QString& prefix) const
 QString MainWindow::generateUniqueObjectName(const QString& baseName, std::uint64_t ignoreObjectId) const
 {
     const auto nameInUse = [this, ignoreObjectId](const QString& candidate) {
-        for (std::uint64_t objectId : viewport_->scene().allObjectIds()) {
+        for (std::uint64_t objectId : viewport_->allObjectIds()) {
             if (objectId == ignoreObjectId) {
                 continue;
             }
 
-            const SceneObject* object = viewport_->scene().findObject(objectId);
+            const SceneObject* object = viewport_->findObject(objectId);
             if (object != nullptr && objectDisplayName(*object) == candidate) {
                 return true;
             }
@@ -2005,7 +2213,7 @@ void MainWindow::logSelectionToScriptEditor(std::uint64_t objectId)
         return;
     }
 
-    const SceneObject* object = viewport_->scene().findObject(objectId);
+    const SceneObject* object = viewport_->findObject(objectId);
     if (object == nullptr) {
         return;
     }
@@ -2016,7 +2224,7 @@ void MainWindow::logSelectionToScriptEditor(std::uint64_t objectId)
 
 void MainWindow::logChannelBoxChangeToScriptEditor(const Transform& transform)
 {
-    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
     if (object == nullptr) {
         return;
     }
@@ -2043,7 +2251,7 @@ void MainWindow::logChannelBoxChangeToScriptEditor(const Transform& transform)
 
 void MainWindow::logVisibilityChangeToScriptEditor(bool visible)
 {
-    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
     if (object == nullptr) {
         return;
     }
@@ -2055,19 +2263,75 @@ void MainWindow::logVisibilityChangeToScriptEditor(bool visible)
 
 void MainWindow::refreshScenePanels()
 {
-    if (markedHierarchyParentId_ != 0 && !viewport_->scene().contains(markedHierarchyParentId_)) {
+    if (markedHierarchyParentId_ != 0 && !viewport_->containsObject(markedHierarchyParentId_)) {
         markedHierarchyParentId_ = 0;
     }
     populateOutliner();
     clearInspector();
 }
 
+void MainWindow::restoreHistoryState(const EditorHistoryState& state)
+{
+    restoringHistory_ = true;
+    viewport_->replaceScene(state.scene);
+    setCurrentFrame(state.currentFrame, false);
+    markedHierarchyParentId_ = state.markedHierarchyParentId;
+    refreshScenePanels();
+    if (state.selectedObjectId != 0 && viewport_->containsObject(state.selectedObjectId)) {
+        selectObject(state.selectedObjectId, true);
+    } else {
+        clearInspector();
+    }
+    restoringHistory_ = false;
+    updateUndoRedoActions();
+}
+
+void MainWindow::recordUndoState()
+{
+    historyController_.recordUndoState(
+        historyController_.captureState(viewport_->scene(), selectedObjectId_, markedHierarchyParentId_, currentFrame_));
+    updateUndoRedoActions();
+}
+
+void MainWindow::undoLastChange()
+{
+    EditorHistoryState previousState;
+    if (!historyController_.tryTakeUndoState(
+            historyController_.captureState(viewport_->scene(), selectedObjectId_, markedHierarchyParentId_, currentFrame_),
+            &previousState)) {
+        return;
+    }
+
+    restoreHistoryState(previousState);
+}
+
+void MainWindow::redoLastChange()
+{
+    EditorHistoryState nextState;
+    if (!historyController_.tryTakeRedoState(
+            historyController_.captureState(viewport_->scene(), selectedObjectId_, markedHierarchyParentId_, currentFrame_),
+            &nextState)) {
+        return;
+    }
+
+    restoreHistoryState(nextState);
+}
+
+void MainWindow::updateUndoRedoActions()
+{
+    if (undoAction_ != nullptr) {
+        undoAction_->setEnabled(historyController_.canUndo());
+    }
+    if (redoAction_ != nullptr) {
+        redoAction_->setEnabled(historyController_.canRedo());
+    }
+}
+
 void MainWindow::populateOutliner()
 {
     outlinerTree_->clear();
 
-    const Scene& scene = viewport_->scene();
-    const QVector<SceneObject::Id> rootIds = scene.rootObjectIds();
+    const QVector<SceneObject::Id> rootIds = viewport_->rootObjectIds();
     for (SceneObject::Id rootId : rootIds) {
         populateOutlinerItem(nullptr, rootId);
     }
@@ -2083,7 +2347,7 @@ void MainWindow::populateOutliner()
 
 void MainWindow::populateOutlinerItem(QTreeWidgetItem* parentItem, std::uint64_t objectId)
 {
-    const SceneObject* object = viewport_->scene().findObject(objectId);
+    const SceneObject* object = viewport_->findObject(objectId);
     if (object == nullptr) {
         return;
     }
@@ -2112,7 +2376,7 @@ void MainWindow::populateOutlinerItem(QTreeWidgetItem* parentItem, std::uint64_t
 
 bool MainWindow::shouldPromoteOutlinerNode(std::uint64_t objectId) const
 {
-    const SceneObject* object = viewport_->scene().findObject(objectId);
+    const SceneObject* object = viewport_->findObject(objectId);
     if (object == nullptr) {
         return false;
     }
@@ -2127,7 +2391,7 @@ void MainWindow::clearInspector()
     selectedObjectId_ = 0;
     viewport_->setSelectedObject(0);
     syncOutlinerSelection(0);
-    const bool hasScene = !viewport_->scene().isEmpty();
+    const bool hasScene = !viewport_->isSceneEmpty();
     if (hasScene) {
         inspectorEmptyStateLabel_->setText("No selection.");
     } else {
@@ -2149,6 +2413,7 @@ void MainWindow::clearInspector()
     jointOrientYSpinBox_->setValue(0.0);
     jointOrientZSpinBox_->setValue(0.0);
     bindPoseStatusLabel_->setText("Bind pose: n/a");
+    skinBindingStatusLabel_->setText("Skin binding: n/a");
     visibilityCheckBox_->setChecked(true);
     visibilityCheckBox_->setText("on");
     updatingChannelBox_ = false;
@@ -2167,6 +2432,9 @@ void MainWindow::clearInspector()
     }
     if (unparentSelectedAction_ != nullptr) {
         unparentSelectedAction_->setEnabled(false);
+    }
+    if (bindSkinAction_ != nullptr) {
+        bindSkinAction_->setEnabled(false);
     }
     if (resetJointOrientationAction_ != nullptr) {
         resetJointOrientationAction_->setEnabled(false);
@@ -2187,7 +2455,7 @@ void MainWindow::clearInspector()
 
 void MainWindow::updateInspector(std::uint64_t objectId)
 {
-    const SceneObject* object = viewport_->scene().findObject(objectId);
+    const SceneObject* object = viewport_->findObject(objectId);
     if (object == nullptr) {
         clearInspector();
         return;
@@ -2213,6 +2481,10 @@ void MainWindow::updateInspector(std::uint64_t objectId)
     }
     if (unparentSelectedAction_ != nullptr) {
         unparentSelectedAction_->setEnabled(object->parentId() != 0);
+    }
+    if (bindSkinAction_ != nullptr) {
+        const SceneObject* markedObject = markedHierarchyParentId_ == 0 ? nullptr : viewport_->findObject(markedHierarchyParentId_);
+        bindSkinAction_->setEnabled(!object->meshHandles().isEmpty() && markedObject != nullptr && markedObject->isJoint() && markedHierarchyParentId_ != objectId);
     }
     if (resetJointOrientationAction_ != nullptr) {
         resetJointOrientationAction_->setEnabled(object->isJoint());
@@ -2259,7 +2531,7 @@ void MainWindow::frameSelectedObject()
     }
 
     viewport_->frameObject(selectedObjectId_);
-    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
     if (object != nullptr) {
         appendScriptHistoryLine(QString("viewFit %1;").arg(objectDisplayName(*object)));
         appendScriptHistoryLine(QString("// Result: framed %1 //").arg(objectDisplayName(*object)));
@@ -2326,6 +2598,62 @@ void MainWindow::setTransformUiMode(TransformUiMode mode)
     }
 }
 
+void MainWindow::setViewCameraPreset(ViewCameraUiPreset preset)
+{
+    if (perspectiveCameraAction_ == nullptr
+            || frontCameraAction_ == nullptr
+            || backCameraAction_ == nullptr
+            || leftCameraAction_ == nullptr
+            || rightCameraAction_ == nullptr
+            || topCameraAction_ == nullptr
+            || bottomCameraAction_ == nullptr) {
+        return;
+    }
+
+    perspectiveCameraAction_->setChecked(preset == ViewCameraUiPreset::Perspective);
+    frontCameraAction_->setChecked(preset == ViewCameraUiPreset::Front);
+    backCameraAction_->setChecked(preset == ViewCameraUiPreset::Back);
+    leftCameraAction_->setChecked(preset == ViewCameraUiPreset::Left);
+    rightCameraAction_->setChecked(preset == ViewCameraUiPreset::Right);
+    topCameraAction_->setChecked(preset == ViewCameraUiPreset::Top);
+    bottomCameraAction_->setChecked(preset == ViewCameraUiPreset::Bottom);
+
+    QString label = "Perspective";
+    ViewportWidget::CameraViewPreset viewportPreset = ViewportWidget::CameraViewPreset::Perspective;
+    switch (preset) {
+    case ViewCameraUiPreset::Front:
+        label = "Front";
+        viewportPreset = ViewportWidget::CameraViewPreset::Front;
+        break;
+    case ViewCameraUiPreset::Back:
+        label = "Back";
+        viewportPreset = ViewportWidget::CameraViewPreset::Back;
+        break;
+    case ViewCameraUiPreset::Left:
+        label = "Left";
+        viewportPreset = ViewportWidget::CameraViewPreset::Left;
+        break;
+    case ViewCameraUiPreset::Right:
+        label = "Right";
+        viewportPreset = ViewportWidget::CameraViewPreset::Right;
+        break;
+    case ViewCameraUiPreset::Top:
+        label = "Top";
+        viewportPreset = ViewportWidget::CameraViewPreset::Top;
+        break;
+    case ViewCameraUiPreset::Bottom:
+        label = "Bottom";
+        viewportPreset = ViewportWidget::CameraViewPreset::Bottom;
+        break;
+    case ViewCameraUiPreset::Perspective:
+        break;
+    }
+
+    viewport_->setCameraViewPreset(viewportPreset);
+    appendScriptComment(QString("Camera preset: %1").arg(label));
+    statusBar()->showMessage(QString("Camera view: %1").arg(label), 1500);
+}
+
 void MainWindow::setAxisUiOrientation(AxisUiOrientation orientation)
 {
     worldAxisAction_->setChecked(orientation == AxisUiOrientation::World);
@@ -2344,27 +2672,23 @@ void MainWindow::setAxisUiOrientation(AxisUiOrientation orientation)
 
 void MainWindow::restoreDefaultWorkspaceLayout()
 {
-    if (viewportDock_ == nullptr || outlinerDock_ == nullptr || inspectorDock_ == nullptr || timeSliderDock_ == nullptr) {
+    if (outlinerDock_ == nullptr || inspectorDock_ == nullptr || timeSliderDock_ == nullptr) {
         return;
     }
 
-    viewportDock_->setFloating(false);
     outlinerDock_->setFloating(false);
     inspectorDock_->setFloating(false);
     timeSliderDock_->setFloating(false);
 
     addDockWidget(Qt::LeftDockWidgetArea, outlinerDock_);
-    splitDockWidget(outlinerDock_, viewportDock_, Qt::Horizontal);
-    splitDockWidget(viewportDock_, inspectorDock_, Qt::Horizontal);
+    addDockWidget(Qt::RightDockWidgetArea, inspectorDock_);
     addDockWidget(Qt::BottomDockWidgetArea, timeSliderDock_);
-    resizeDocks({ outlinerDock_, viewportDock_, inspectorDock_ }, { 280, 920, 320 }, Qt::Horizontal);
+    resizeDocks({ outlinerDock_, inspectorDock_ }, { 280, 320 }, Qt::Horizontal);
     resizeDocks({ timeSliderDock_ }, { 150 }, Qt::Vertical);
 
     outlinerDock_->show();
-    viewportDock_->show();
     inspectorDock_->show();
     timeSliderDock_->show();
-    viewportDock_->raise();
     appendScriptComment("Workspace layout restored");
     statusBar()->showMessage("Workspace layout restored", 2000);
 }
@@ -2405,9 +2729,9 @@ void MainWindow::setCurrentFrame(int frame, bool logToScript)
 
     refreshAnimationTimelineUi();
 
-    if (selectedObjectId_ != 0 && viewport_->scene().contains(selectedObjectId_)) {
+    if (selectedObjectId_ != 0 && viewport_->containsObject(selectedObjectId_)) {
         updateChannelBox(selectedObjectId_);
-        const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+        const SceneObject* object = viewport_->findObject(selectedObjectId_);
         const bool canFrame = object != nullptr && object->isVisible() && object->worldBounds().isValid();
         frameSelectedButton_->setEnabled(canFrame);
         frameSelectedAction_->setEnabled(canFrame);
@@ -2428,16 +2752,22 @@ void MainWindow::setKeyForSelection(bool logToScript)
         return;
     }
 
-    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
     if (object == nullptr) {
         statusBar()->showMessage("Selected object is no longer available", 1500);
         return;
     }
 
     if (!viewport_->setObjectKeyframe(selectedObjectId_, currentFrame_)) {
+        qCWarning(logAnimation) << "set key failed:" << "objectId=" << selectedObjectId_ << "frame=" << currentFrame_;
         statusBar()->showMessage("Set key failed", 1500);
         return;
     }
+
+    qCInfo(logAnimation) << "set key:"
+            << "object=" << objectDisplayName(*object)
+            << "objectId=" << selectedObjectId_
+            << "frame=" << currentFrame_;
 
     refreshAnimationTimelineUi();
     updateChannelBox(selectedObjectId_);
@@ -2457,7 +2787,7 @@ void MainWindow::deleteKeyForSelection(bool logToScript)
         return;
     }
 
-    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
     if (object == nullptr) {
         statusBar()->showMessage("Selected object is no longer available", 1500);
         return;
@@ -2470,9 +2800,15 @@ void MainWindow::deleteKeyForSelection(bool logToScript)
 
     const QString objectName = objectDisplayName(*object);
     if (!viewport_->removeObjectKeyframe(selectedObjectId_, currentFrame_)) {
+        qCWarning(logAnimation) << "delete key failed:" << "objectId=" << selectedObjectId_ << "frame=" << currentFrame_;
         statusBar()->showMessage("Delete key failed", 1500);
         return;
     }
+
+    qCInfo(logAnimation) << "delete key:"
+            << "object=" << objectName
+            << "objectId=" << selectedObjectId_
+            << "frame=" << currentFrame_;
 
     refreshAnimationTimelineUi();
     updateChannelBox(selectedObjectId_);
@@ -2483,6 +2819,105 @@ void MainWindow::deleteKeyForSelection(bool logToScript)
     }
 
     statusBar()->showMessage(QString("Deleted key at frame %1").arg(currentFrame_), 1500);
+}
+
+void MainWindow::duplicateCurrentKeyForSelection(bool logToScript)
+{
+    if (selectedObjectId_ == 0) {
+        statusBar()->showMessage("Select an object to duplicate a key", 1500);
+        return;
+    }
+
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
+    if (object == nullptr) {
+        statusBar()->showMessage("Selected object is no longer available", 1500);
+        return;
+    }
+
+    if (!object->hasTransformKeyframe(currentFrame_)) {
+        statusBar()->showMessage(QString("No key at frame %1 to duplicate").arg(currentFrame_), 1500);
+        return;
+    }
+
+    const std::uint64_t objectId = selectedObjectId_;
+    const QString objectName = objectDisplayName(*object);
+    const int sourceFrame = currentFrame_;
+    const int targetFrame = currentFrame_ + 1;
+    Scene updatedScene = viewport_->sceneSnapshot();
+    if (!updatedScene.duplicateObjectKeyframe(objectId, sourceFrame, targetFrame)) {
+        qCWarning(logAnimation) << "duplicate key failed:"
+                << "objectId=" << objectId
+                << "sourceFrame=" << sourceFrame
+                << "targetFrame=" << targetFrame;
+        statusBar()->showMessage("Duplicate key failed", 1500);
+        return;
+    }
+
+    recordUndoState();
+    viewport_->replaceScene(updatedScene);
+    refreshScenePanels();
+    selectObject(objectId, true);
+    setCurrentFrame(targetFrame, false);
+
+    qCInfo(logAnimation) << "duplicate key:"
+            << "object=" << objectName
+            << "objectId=" << objectId
+            << "sourceFrame=" << sourceFrame
+            << "targetFrame=" << targetFrame;
+
+    if (logToScript) {
+        appendScriptHistoryLine(QString("copyKey %1 -t %2 -to %3;").arg(objectName).arg(sourceFrame).arg(targetFrame));
+        appendScriptHistoryLine(QString("// Result: copied key on %1 from frame %2 to %3 //").arg(objectName).arg(sourceFrame).arg(targetFrame));
+    }
+
+    statusBar()->showMessage(QString("Duplicated key to frame %1").arg(targetFrame), 1500);
+}
+
+void MainWindow::shiftSelectedObjectKeyframes(int frameDelta, bool logToScript)
+{
+    if (selectedObjectId_ == 0) {
+        statusBar()->showMessage("Select an object to shift keys", 1500);
+        return;
+    }
+
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
+    if (object == nullptr) {
+        statusBar()->showMessage("Selected object is no longer available", 1500);
+        return;
+    }
+
+    if (object->transformKeyframes().isEmpty()) {
+        statusBar()->showMessage("Selected object has no keys to shift", 1500);
+        return;
+    }
+
+    const std::uint64_t objectId = selectedObjectId_;
+    const QString objectName = objectDisplayName(*object);
+    Scene updatedScene = viewport_->sceneSnapshot();
+    if (!updatedScene.offsetObjectKeyframes(objectId, frameDelta)) {
+        qCWarning(logAnimation) << "shift keys failed:" << "objectId=" << objectId << "delta=" << frameDelta;
+        statusBar()->showMessage("Shift keys failed", 1500);
+        return;
+    }
+
+    recordUndoState();
+    viewport_->replaceScene(updatedScene);
+    refreshScenePanels();
+    selectObject(objectId, true);
+    setCurrentFrame(currentFrame_ + frameDelta, false);
+
+    qCInfo(logAnimation) << "shift keys:"
+            << "object=" << objectName
+            << "objectId=" << objectId
+            << "delta=" << frameDelta
+            << "newCurrentFrame=" << (currentFrame_ + frameDelta);
+
+    if (logToScript) {
+        appendScriptHistoryLine(QString("shiftKey %1 -by %2;").arg(objectName).arg(frameDelta));
+        appendScriptHistoryLine(QString("// Result: shifted keys on %1 by %2 //").arg(objectName).arg(frameDelta));
+    }
+
+    statusBar()->showMessage(QString("Shifted keys by %1").arg(frameDelta), 1500);
 }
 
 void MainWindow::setAutoKeyEnabled(bool enabled, bool logToScript)
@@ -2536,6 +2971,47 @@ void MainWindow::stepFrame(int delta)
     setCurrentFrame(currentFrame_ + delta);
 }
 
+void MainWindow::jumpToSelectedObjectKeyframe(bool forward, bool logToScript)
+{
+    if (selectedObjectId_ == 0) {
+        statusBar()->showMessage("Select an object to jump keys", 1500);
+        return;
+    }
+
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
+    if (object == nullptr) {
+        statusBar()->showMessage("Selected object is no longer available", 1500);
+        return;
+    }
+
+    const int targetFrame = forward
+        ? viewport_->nextObjectKeyframe(selectedObjectId_, currentFrame_)
+        : viewport_->previousObjectKeyframe(selectedObjectId_, currentFrame_);
+    if (targetFrame == currentFrame_) {
+        qCInfo(logAnimation) << "jump key skipped:"
+                << "object=" << objectDisplayName(*object)
+                << "objectId=" << selectedObjectId_
+                << "direction=" << (forward ? "next" : "previous")
+                << "frame=" << currentFrame_;
+        statusBar()->showMessage(forward ? "No next key" : "No previous key", 1200);
+        return;
+    }
+
+    setCurrentFrame(targetFrame, false);
+
+    qCInfo(logAnimation) << "jump key:"
+            << "object=" << objectDisplayName(*object)
+            << "objectId=" << selectedObjectId_
+            << "direction=" << (forward ? "next" : "previous")
+            << "targetFrame=" << targetFrame;
+
+    if (logToScript) {
+        appendScriptComment(QString("%1 key on %2 -> frame %3").arg(forward ? "next" : "previous", objectDisplayName(*object)).arg(targetFrame));
+    }
+
+    statusBar()->showMessage(QString("Jumped to frame %1").arg(targetFrame), 1200);
+}
+
 void MainWindow::togglePlayback()
 {
     if (playbackTimer_ == nullptr || playPauseButton_ == nullptr) {
@@ -2563,56 +3039,6 @@ void MainWindow::advancePlayback()
     setCurrentFrame(nextFrame, false);
 }
 
-Scene MainWindow::buildExportSceneForObject(std::uint64_t objectId) const
-{
-    Scene exportScene;
-    copyObjectSubtreeToScene(viewport_->scene(), objectId, exportScene, 0);
-    exportScene.rebuildWorldData();
-    return exportScene;
-}
-
-std::uint64_t MainWindow::copyObjectSubtreeToScene(const Scene& sourceScene, std::uint64_t sourceId, Scene& targetScene, std::uint64_t targetParentId) const
-{
-    const SceneObject* sourceObject = sourceScene.findObject(sourceId);
-    if (sourceObject == nullptr) {
-        return 0;
-    }
-
-    const SceneObject::Id newId = targetScene.createObject(sourceObject->name(), sourceObject->kind());
-    SceneObject* targetObject = targetScene.findObject(newId);
-    if (targetObject == nullptr) {
-        return 0;
-    }
-
-    targetObject->setParentId(targetParentId);
-    targetObject->setVisible(sourceObject->isVisible());
-    targetObject->setAuthoredTransform(sourceObject->authoredTransform());
-    targetObject->setLocalTransform(sourceObject->localTransform());
-    targetObject->setJointOrientation(sourceObject->jointOrientation());
-    targetObject->setBindPoseLocalTransform(sourceObject->bindPoseLocalTransform());
-    targetObject->setHasBindPose(sourceObject->hasBindPose());
-    targetObject->setTransformKeyframes(sourceObject->transformKeyframes());
-    targetObject->setLocalBounds(sourceObject->localBounds());
-
-    for (int meshHandle : sourceObject->meshHandles()) {
-        const MeshData* mesh = sourceScene.findMesh(meshHandle);
-        if (mesh == nullptr) {
-            continue;
-        }
-
-        targetObject->addMeshHandle(targetScene.addMesh(*mesh));
-    }
-
-    for (std::uint64_t childId : sourceObject->childIds()) {
-        const std::uint64_t newChildId = copyObjectSubtreeToScene(sourceScene, childId, targetScene, newId);
-        if (newChildId != 0) {
-            targetObject->addChildId(newChildId);
-        }
-    }
-
-    return newId;
-}
-
 PrimitiveMeshFactory::Type MainWindow::primitiveTypeFromItem(const QListWidgetItem* item) const
 {
     if (item == nullptr) {
@@ -2624,7 +3050,7 @@ PrimitiveMeshFactory::Type MainWindow::primitiveTypeFromItem(const QListWidgetIt
 
 void MainWindow::updateChannelBox(std::uint64_t objectId)
 {
-    const SceneObject* object = viewport_->scene().findObject(objectId);
+    const SceneObject* object = viewport_->findObject(objectId);
     if (object == nullptr) {
         return;
     }
@@ -2649,6 +3075,7 @@ void MainWindow::updateChannelBox(std::uint64_t objectId)
     jointOrientYSpinBox_->setValue(isJoint ? jointOrientEuler.y() : 0.0);
     jointOrientZSpinBox_->setValue(isJoint ? jointOrientEuler.z() : 0.0);
     bindPoseStatusLabel_->setText(formatBindPoseStatus(*object));
+    skinBindingStatusLabel_->setText(formatSkinBindingStatus(*object));
     visibilityCheckBox_->setChecked(object->isVisible());
     visibilityCheckBox_->setText(object->isVisible() ? "on" : "off");
     updatingChannelBox_ = false;
@@ -2666,14 +3093,16 @@ void MainWindow::refreshAnimationTimelineUi()
     QVector<int> keyframes;
     bool hasSelection = false;
     bool currentFrameKeyed = false;
+    bool hasAnyKeys = false;
     QString objectName = "No selection";
 
     if (selectedObjectId_ != 0) {
-        const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+        const SceneObject* object = viewport_->findObject(selectedObjectId_);
         if (object != nullptr) {
             hasSelection = true;
             objectName = objectDisplayName(*object);
             const TransformKeyframeTrack& track = object->transformKeyframes();
+            hasAnyKeys = !track.isEmpty();
             keyframes.reserve(track.size());
             for (const TransformKeyframe& keyframe : track) {
                 keyframes.append(keyframe.frame);
@@ -2707,6 +3136,46 @@ void MainWindow::refreshAnimationTimelineUi()
         deleteKeyButton_->setStyleSheet(currentFrameKeyed
                 ? "QPushButton { background-color: #565656; color: white; }"
                 : QString());
+    }
+
+    if (duplicateKeyButton_ != nullptr) {
+        duplicateKeyButton_->setEnabled(hasSelection && currentFrameKeyed);
+    }
+
+    if (shiftKeysLeftButton_ != nullptr) {
+        shiftKeysLeftButton_->setEnabled(hasSelection && hasAnyKeys);
+    }
+
+    if (shiftKeysRightButton_ != nullptr) {
+        shiftKeysRightButton_->setEnabled(hasSelection && hasAnyKeys);
+    }
+
+    if (previousKeyButton_ != nullptr) {
+        previousKeyButton_->setEnabled(hasSelection && hasAnyKeys);
+    }
+
+    if (nextKeyButton_ != nullptr) {
+        nextKeyButton_->setEnabled(hasSelection && hasAnyKeys);
+    }
+
+    if (duplicateKeyAction_ != nullptr) {
+        duplicateKeyAction_->setEnabled(hasSelection && currentFrameKeyed);
+    }
+
+    if (shiftKeysLeftAction_ != nullptr) {
+        shiftKeysLeftAction_->setEnabled(hasSelection && hasAnyKeys);
+    }
+
+    if (shiftKeysRightAction_ != nullptr) {
+        shiftKeysRightAction_->setEnabled(hasSelection && hasAnyKeys);
+    }
+
+    if (previousKeyAction_ != nullptr) {
+        previousKeyAction_->setEnabled(hasSelection && hasAnyKeys);
+    }
+
+    if (nextKeyAction_ != nullptr) {
+        nextKeyAction_->setEnabled(hasSelection && hasAnyKeys);
     }
 
     if (autoKeyButton_ != nullptr) {
@@ -2756,7 +3225,7 @@ void MainWindow::applyChannelBoxToSelection()
         return;
     }
 
-    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
     if (object == nullptr) {
         return;
     }
@@ -2790,7 +3259,7 @@ void MainWindow::applyJointOrientationToSelection()
         return;
     }
 
-    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
     if (object == nullptr || !object->isJoint()) {
         return;
     }
@@ -2826,7 +3295,7 @@ void MainWindow::applyVisibilityToSelection(bool visible)
     }
 
     visibilityCheckBox_->setText(visible ? "on" : "off");
-    const SceneObject* object = viewport_->scene().findObject(selectedObjectId_);
+    const SceneObject* object = viewport_->findObject(selectedObjectId_);
     const bool canFrame = object != nullptr && object->isVisible() && object->worldBounds().isValid();
     frameSelectedButton_->setEnabled(canFrame);
     frameSelectedAction_->setEnabled(canFrame);

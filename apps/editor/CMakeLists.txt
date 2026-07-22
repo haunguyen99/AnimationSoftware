@@ -1,11 +1,15 @@
 find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGLWidgets OpenGL Gui)
 
 add_executable(phoenix_editor
+    src/EditorDocumentController.cpp
+    src/EditorHistoryController.cpp
+    src/EditorSceneMutationController.cpp
     main.cpp
     src/KeyframeTimelineWidget.cpp
     src/MainWindow.cpp
     src/ScriptCommandSystem.cpp
     src/ViewportWidget.cpp
+    src/ViewportWorkspaceWidget.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/Bounds3D.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/SceneObject.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/Scene.cpp

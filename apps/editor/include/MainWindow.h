@@ -2,14 +2,16 @@
 
 #include <QMainWindow>
 #include <QPoint>
+#include <QVector>
 
 #include <cstdint>
 
+#include "EditorHistoryController.h"
 #include "ScriptCommandSystem.h"
 #include "scene/PrimitiveMeshFactory.h"
 #include "scene/Scene.h"
 
-class ViewportWidget;
+class ViewportWorkspaceWidget;
 class KeyframeTimelineWidget;
 class QAction;
 class QToolBar;
@@ -47,7 +49,16 @@ private:
         World,
         Local
     };
-
+    enum class ViewCameraUiPreset
+    {
+        Perspective,
+        Front,
+        Back,
+        Left,
+        Right,
+        Top,
+        Bottom
+    };
     void createMenus();
     void createToolbar();
     void createDocks();
@@ -74,6 +85,7 @@ private:
     void markSelectionAsHierarchyParent();
     void parentSelectionToMarkedParent();
     void unparentSelection();
+    void bindSelectedMeshToMarkedJoint();
     void resetSelectedJointOrientation();
     void alignSelectedJointOrientationToChild();
     void captureSelectedBindPose();
@@ -104,6 +116,7 @@ private:
     void frameSelectedObject();
     void selectObject(std::uint64_t objectId, bool syncOutliner);
     void syncOutlinerSelection(std::uint64_t objectId);
+    void setViewCameraPreset(ViewCameraUiPreset preset);
     void setTransformUiMode(TransformUiMode mode);
     void setAxisUiOrientation(AxisUiOrientation orientation);
     void restoreDefaultWorkspaceLayout();
@@ -112,13 +125,14 @@ private:
     void setCurrentFrame(int frame, bool logToScript = true);
     void setKeyForSelection(bool logToScript = true);
     void deleteKeyForSelection(bool logToScript = true);
+    void duplicateCurrentKeyForSelection(bool logToScript = true);
+    void shiftSelectedObjectKeyframes(int frameDelta, bool logToScript = true);
     void setAutoKeyEnabled(bool enabled, bool logToScript = true);
     void setPlaybackRange(int startFrame, int endFrame, bool logToScript = true);
     void stepFrame(int delta);
+    void jumpToSelectedObjectKeyframe(bool forward, bool logToScript = true);
     void togglePlayback();
     void advancePlayback();
-    Scene buildExportSceneForObject(std::uint64_t objectId) const;
-    std::uint64_t copyObjectSubtreeToScene(const Scene& sourceScene, std::uint64_t sourceId, Scene& targetScene, std::uint64_t targetParentId) const;
     void updateChannelBox(std::uint64_t objectId);
     void refreshAnimationTimelineUi();
     void setChannelBoxEnabled(bool enabled);
@@ -126,8 +140,13 @@ private:
     void applyJointOrientationToSelection();
     void applyVisibilityToSelection(bool visible);
     PrimitiveMeshFactory::Type primitiveTypeFromItem(const QListWidgetItem* item) const;
+    void restoreHistoryState(const EditorHistoryState& state);
+    void recordUndoState();
+    void undoLastChange();
+    void redoLastChange();
+    void updateUndoRedoActions();
 
-    ViewportWidget* viewport_ = nullptr;
+    ViewportWorkspaceWidget* viewport_ = nullptr;
     QDockWidget* viewportDock_ = nullptr;
     QDockWidget* outlinerDock_ = nullptr;
     QDockWidget* inspectorDock_ = nullptr;
@@ -145,9 +164,14 @@ private:
     QSpinBox* playbackEndSpinBox_ = nullptr;
     QPushButton* setKeyButton_ = nullptr;
     QPushButton* deleteKeyButton_ = nullptr;
+    QPushButton* duplicateKeyButton_ = nullptr;
+    QPushButton* shiftKeysLeftButton_ = nullptr;
+    QPushButton* shiftKeysRightButton_ = nullptr;
     QPushButton* autoKeyButton_ = nullptr;
     QLabel* timelineStatusLabel_ = nullptr;
     QPushButton* playPauseButton_ = nullptr;
+    QPushButton* previousKeyButton_ = nullptr;
+    QPushButton* nextKeyButton_ = nullptr;
     QTimer* playbackTimer_ = nullptr;
     QWidget* inspectorDetailsWidget_ = nullptr;
     QLabel* inspectorEmptyStateLabel_ = nullptr;
@@ -166,6 +190,7 @@ private:
     QDoubleSpinBox* jointOrientYSpinBox_ = nullptr;
     QDoubleSpinBox* jointOrientZSpinBox_ = nullptr;
     QLabel* bindPoseStatusLabel_ = nullptr;
+    QLabel* skinBindingStatusLabel_ = nullptr;
     QPushButton* resetJointOrientationButton_ = nullptr;
     QPushButton* alignJointOrientationButton_ = nullptr;
     QPushButton* captureBindPoseButton_ = nullptr;
@@ -173,6 +198,8 @@ private:
     QCheckBox* visibilityCheckBox_ = nullptr;
     QPushButton* frameSelectedButton_ = nullptr;
     QToolBar* toolbar_ = nullptr;
+    QAction* undoAction_ = nullptr;
+    QAction* redoAction_ = nullptr;
     QAction* importFbxAction_ = nullptr;
     QAction* newSceneAction_ = nullptr;
     QAction* openSceneAction_ = nullptr;
@@ -190,6 +217,13 @@ private:
     QAction* wireframeAction_ = nullptr;
     QAction* showAxisAction_ = nullptr;
     QAction* backfaceCullingAction_ = nullptr;
+    QAction* perspectiveCameraAction_ = nullptr;
+    QAction* frontCameraAction_ = nullptr;
+    QAction* backCameraAction_ = nullptr;
+    QAction* leftCameraAction_ = nullptr;
+    QAction* rightCameraAction_ = nullptr;
+    QAction* topCameraAction_ = nullptr;
+    QAction* bottomCameraAction_ = nullptr;
     QAction* translateAction_ = nullptr;
     QAction* rotateAction_ = nullptr;
     QAction* scaleAction_ = nullptr;
@@ -201,11 +235,17 @@ private:
     QAction* markHierarchyParentAction_ = nullptr;
     QAction* parentToMarkedParentAction_ = nullptr;
     QAction* unparentSelectedAction_ = nullptr;
+    QAction* bindSkinAction_ = nullptr;
     QAction* resetJointOrientationAction_ = nullptr;
     QAction* alignJointOrientationAction_ = nullptr;
     QAction* captureBindPoseAction_ = nullptr;
     QAction* captureBindPoseRecursiveAction_ = nullptr;
     QAction* scriptEditorAction_ = nullptr;
+    QAction* duplicateKeyAction_ = nullptr;
+    QAction* shiftKeysLeftAction_ = nullptr;
+    QAction* shiftKeysRightAction_ = nullptr;
+    QAction* previousKeyAction_ = nullptr;
+    QAction* nextKeyAction_ = nullptr;
     ScriptCommandRegistry scriptCommandRegistry_;
     QString currentSceneFilePath_;
     std::uint64_t selectedObjectId_ = 0;
@@ -218,7 +258,9 @@ private:
     int playbackEndFrame_ = 24;
     bool updatingChannelBox_ = false;
     bool updatingTimeSlider_ = false;
+    bool restoringHistory_ = false;
     bool autoKeyEnabled_ = false;
     bool interactivePrimitiveCreationEnabled_ = true;
     bool exitPrimitiveToolOnCompletionEnabled_ = true;
+    EditorHistoryController historyController_;
 };
