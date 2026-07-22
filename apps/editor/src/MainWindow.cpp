@@ -34,8 +34,8 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 
+#include "AnimationTimelinePanel.h"
 #include "EditorDocumentController.h"
-#include "KeyframeTimelineWidget.h"
 #include "EditorSceneMutationController.h"
 #include "ViewportWorkspaceWidget.h"
 #include "io/PhoenixSceneDocument.h"
@@ -158,12 +158,6 @@ QString defaultJointPrefix()
     return "joint";
 }
 
-QPushButton* createTransportButton(const QString& text, QWidget* parent)
-{
-    QPushButton* button = new QPushButton(text, parent);
-    button->setFixedWidth(28);
-    return button;
-}
 }
 
 MainWindow::MainWindow()
@@ -209,6 +203,7 @@ MainWindow::MainWindow()
     updateWindowTitle();
     clearInspector();
     updateUndoRedoActions();
+    applyAnimationState(animationState_);
     statusBar()->showMessage("Ready");
 }
 
@@ -847,164 +842,38 @@ QWidget* MainWindow::createInspectorPanel()
 
 QWidget* MainWindow::createTimeSliderPanel()
 {
-    QWidget* panel = new QWidget(this);
-    QVBoxLayout* rootLayout = new QVBoxLayout(panel);
-    rootLayout->setContentsMargins(10, 8, 10, 8);
-    rootLayout->setSpacing(6);
-
-    QHBoxLayout* topRow = new QHBoxLayout();
-    topRow->setSpacing(10);
-
-    playbackStartSpinBox_ = new QSpinBox(panel);
-    playbackStartSpinBox_->setObjectName("playbackStartSpinBox");
-    playbackStartSpinBox_->setRange(-10000, 100000);
-    playbackStartSpinBox_->setValue(playbackStartFrame_);
-
-    playbackEndSpinBox_ = new QSpinBox(panel);
-    playbackEndSpinBox_->setObjectName("playbackEndSpinBox");
-    playbackEndSpinBox_->setRange(-10000, 100000);
-    playbackEndSpinBox_->setValue(playbackEndFrame_);
-
-    currentFrameSpinBox_ = new QSpinBox(panel);
-    currentFrameSpinBox_->setObjectName("currentFrameSpinBox");
-    currentFrameSpinBox_->setRange(playbackStartFrame_, playbackEndFrame_);
-    currentFrameSpinBox_->setValue(currentFrame_);
-
-    topRow->addWidget(new QLabel("Start", panel));
-    topRow->addWidget(playbackStartSpinBox_);
-    topRow->addWidget(new QLabel("End", panel));
-    topRow->addWidget(playbackEndSpinBox_);
-    topRow->addStretch();
-    autoKeyButton_ = new QPushButton("Auto Key", panel);
-    autoKeyButton_->setObjectName("autoKeyButton");
-    autoKeyButton_->setCheckable(true);
-    autoKeyButton_->setChecked(autoKeyEnabled_);
-    topRow->addWidget(autoKeyButton_);
-    setKeyButton_ = new QPushButton("Key Selected", panel);
-    setKeyButton_->setObjectName("setKeyButton");
-    setKeyButton_->setEnabled(false);
-    topRow->addWidget(setKeyButton_);
-    deleteKeyButton_ = new QPushButton("Delete Key", panel);
-    deleteKeyButton_->setObjectName("deleteKeyButton");
-    deleteKeyButton_->setEnabled(false);
-    topRow->addWidget(deleteKeyButton_);
-    duplicateKeyButton_ = new QPushButton("Duplicate Key", panel);
-    duplicateKeyButton_->setObjectName("duplicateKeyButton");
-    duplicateKeyButton_->setEnabled(false);
-    topRow->addWidget(duplicateKeyButton_);
-    shiftKeysLeftButton_ = new QPushButton("Shift -1", panel);
-    shiftKeysLeftButton_->setObjectName("shiftKeysLeftButton");
-    shiftKeysLeftButton_->setEnabled(false);
-    topRow->addWidget(shiftKeysLeftButton_);
-    shiftKeysRightButton_ = new QPushButton("Shift +1", panel);
-    shiftKeysRightButton_->setObjectName("shiftKeysRightButton");
-    shiftKeysRightButton_->setEnabled(false);
-    topRow->addWidget(shiftKeysRightButton_);
-    topRow->addWidget(new QLabel("Current", panel));
-    topRow->addWidget(currentFrameSpinBox_);
-
-    QWidget* ticksHost = new QWidget(panel);
-    QVBoxLayout* ticksLayout = new QVBoxLayout(ticksHost);
-    ticksLayout->setContentsMargins(0, 0, 0, 0);
-    ticksLayout->setSpacing(2);
-
-    QHBoxLayout* labelsRow = new QHBoxLayout();
-    labelsRow->setContentsMargins(4, 0, 4, 0);
-    labelsRow->setSpacing(0);
-    for (int frame = 0; frame <= 24; ++frame) {
-        QLabel* label = new QLabel(QString::number(frame), ticksHost);
-        label->setAlignment(frame == 24 ? Qt::AlignRight : Qt::AlignLeft);
-        labelsRow->addWidget(label, 1);
-    }
-
-    timeSlider_ = new QSlider(Qt::Horizontal, ticksHost);
-    timeSlider_->setObjectName("timeSlider");
-    timeSlider_->setRange(playbackStartFrame_, playbackEndFrame_);
-    timeSlider_->setValue(currentFrame_);
-    timeSlider_->setTickPosition(QSlider::TicksBelow);
-    timeSlider_->setTickInterval(1);
-    timeSlider_->setPageStep(1);
-
-    keyframeTimelineWidget_ = new KeyframeTimelineWidget(ticksHost);
-    keyframeTimelineWidget_->setObjectName("keyframeTimelineWidget");
-    keyframeTimelineWidget_->setFrameRange(playbackStartFrame_, playbackEndFrame_);
-    keyframeTimelineWidget_->setCurrentFrame(currentFrame_);
-
-    timelineStatusLabel_ = new QLabel("No selection", panel);
-    timelineStatusLabel_->setObjectName("timelineStatusLabel");
-    timelineStatusLabel_->setStyleSheet("color: #bdbdbd;");
-
-    ticksLayout->addLayout(labelsRow);
-    ticksLayout->addWidget(keyframeTimelineWidget_);
-    ticksLayout->addWidget(timeSlider_);
-
-    QHBoxLayout* controlsRow = new QHBoxLayout();
-    controlsRow->setSpacing(4);
-    controlsRow->addStretch();
-
-    QPushButton* jumpStartButton = createTransportButton("|<", panel);
-    jumpStartButton->setObjectName("jumpStartButton");
-    previousKeyButton_ = createTransportButton("<<", panel);
-    previousKeyButton_->setObjectName("previousKeyButton");
-    QPushButton* stepBackButton = createTransportButton("<", panel);
-    stepBackButton->setObjectName("stepBackButton");
-    playPauseButton_ = createTransportButton(">", panel);
-    playPauseButton_->setObjectName("playPauseButton");
-    QPushButton* stepForwardButton = createTransportButton(">", panel);
-    stepForwardButton->setObjectName("stepForwardButton");
-    nextKeyButton_ = createTransportButton(">>", panel);
-    nextKeyButton_->setObjectName("nextKeyButton");
-    QPushButton* jumpEndButton = createTransportButton(">|", panel);
-    jumpEndButton->setObjectName("jumpEndButton");
-
-    controlsRow->addWidget(jumpStartButton);
-    controlsRow->addWidget(previousKeyButton_);
-    controlsRow->addWidget(stepBackButton);
-    controlsRow->addWidget(playPauseButton_);
-    controlsRow->addWidget(stepForwardButton);
-    controlsRow->addWidget(nextKeyButton_);
-    controlsRow->addWidget(jumpEndButton);
-
-    QObject::connect(playbackStartSpinBox_, qOverload<int>(&QSpinBox::valueChanged), this, [this](int) {
+    animationTimelinePanel_ = new AnimationTimelinePanel(this);
+    animationTimelinePanel_->bindTimelineActions(
+        duplicateKeyAction_,
+        shiftKeysLeftAction_,
+        shiftKeysRightAction_,
+        previousKeyAction_,
+        nextKeyAction_);
+    animationTimelinePanel_->setPlaybackRangeChangedCallback([this](int startFrame, int endFrame) {
         if (!updatingTimeSlider_) {
-            setPlaybackRange(playbackStartSpinBox_->value(), playbackEndSpinBox_->value());
+            setPlaybackRange(startFrame, endFrame);
         }
     });
-    QObject::connect(playbackEndSpinBox_, qOverload<int>(&QSpinBox::valueChanged), this, [this](int) {
-        if (!updatingTimeSlider_) {
-            setPlaybackRange(playbackStartSpinBox_->value(), playbackEndSpinBox_->value());
-        }
-    });
-    QObject::connect(currentFrameSpinBox_, qOverload<int>(&QSpinBox::valueChanged), this, [this](int frame) {
+    animationTimelinePanel_->setCurrentFrameChangedCallback([this](int frame) {
         if (!updatingTimeSlider_) {
             setCurrentFrame(frame);
         }
     });
-    QObject::connect(timeSlider_, &QSlider::valueChanged, this, [this](int frame) {
-        if (!updatingTimeSlider_) {
-            setCurrentFrame(frame);
-        }
-    });
-    QObject::connect(jumpStartButton, &QPushButton::clicked, this, [this]() { setCurrentFrame(playbackStartFrame_); });
-    QObject::connect(stepBackButton, &QPushButton::clicked, this, [this]() { stepFrame(-1); });
-    QObject::connect(playPauseButton_, &QPushButton::clicked, this, &MainWindow::togglePlayback);
-    QObject::connect(stepForwardButton, &QPushButton::clicked, this, [this]() { stepFrame(1); });
-    QObject::connect(previousKeyButton_, &QPushButton::clicked, this, [this]() { jumpToSelectedObjectKeyframe(false, true); });
-    QObject::connect(nextKeyButton_, &QPushButton::clicked, this, [this]() { jumpToSelectedObjectKeyframe(true, true); });
-    QObject::connect(jumpEndButton, &QPushButton::clicked, this, [this]() { setCurrentFrame(playbackEndFrame_); });
-    QObject::connect(setKeyButton_, &QPushButton::clicked, this, [this]() { setKeyForSelection(true); });
-    QObject::connect(deleteKeyButton_, &QPushButton::clicked, this, [this]() { deleteKeyForSelection(true); });
-    QObject::connect(duplicateKeyButton_, &QPushButton::clicked, this, [this]() { duplicateCurrentKeyForSelection(true); });
-    QObject::connect(shiftKeysLeftButton_, &QPushButton::clicked, this, [this]() { shiftSelectedObjectKeyframes(-1, true); });
-    QObject::connect(shiftKeysRightButton_, &QPushButton::clicked, this, [this]() { shiftSelectedObjectKeyframes(1, true); });
-    QObject::connect(autoKeyButton_, &QPushButton::toggled, this, [this](bool enabled) { setAutoKeyEnabled(enabled, true); });
-
-    rootLayout->addLayout(topRow);
-    rootLayout->addWidget(ticksHost);
-    rootLayout->addWidget(timelineStatusLabel_);
-    rootLayout->addLayout(controlsRow);
-    refreshAnimationTimelineUi();
-    return panel;
+    animationTimelinePanel_->setJumpStartCallback([this]() { setCurrentFrame(animationState_.playbackStartFrame); });
+    animationTimelinePanel_->setStepBackCallback([this]() { stepFrame(-1); });
+    animationTimelinePanel_->setTogglePlaybackCallback([this]() { togglePlayback(); });
+    animationTimelinePanel_->setStepForwardCallback([this]() { stepFrame(1); });
+    animationTimelinePanel_->setPreviousKeyCallback([this]() { jumpToSelectedObjectKeyframe(false, true); });
+    animationTimelinePanel_->setNextKeyCallback([this]() { jumpToSelectedObjectKeyframe(true, true); });
+    animationTimelinePanel_->setJumpEndCallback([this]() { setCurrentFrame(animationState_.playbackEndFrame); });
+    animationTimelinePanel_->setSetKeyCallback([this]() { setKeyForSelection(true); });
+    animationTimelinePanel_->setDeleteKeyCallback([this]() { deleteKeyForSelection(true); });
+    animationTimelinePanel_->setDuplicateKeyCallback([this]() { duplicateCurrentKeyForSelection(true); });
+    animationTimelinePanel_->setShiftKeysLeftCallback([this]() { shiftSelectedObjectKeyframes(-1, true); });
+    animationTimelinePanel_->setShiftKeysRightCallback([this]() { shiftSelectedObjectKeyframes(1, true); });
+    animationTimelinePanel_->setAutoKeyChangedCallback([this](bool enabled) { setAutoKeyEnabled(enabled, true); });
+    animationTimelinePanel_->setViewModel(buildAnimationTimelineViewModel());
+    return animationTimelinePanel_;
 }
 
 QWidget* MainWindow::createScriptEditorPanel()
@@ -1131,7 +1000,7 @@ bool MainWindow::importFbxFromPath(const QString& filePath, bool logToScript)
         return false;
     }
 
-    setCurrentFrame(currentFrame_, false);
+    setCurrentFrame(animationState_.currentFrame, false);
     refreshScenePanels();
     if (logToScript) {
         appendScriptHistoryLine(QString("file -import \"%1\";").arg(QDir::toNativeSeparators(filePath)));
@@ -1281,7 +1150,7 @@ void MainWindow::savePreferences()
     QSettings settings("ProjectPhoenix", "PhoenixEditor");
     settings.setValue("mainWindow/geometry", saveGeometry());
     settings.setValue("mainWindow/state", saveState());
-    settings.setValue("animation/autoKeyEnabled", autoKeyEnabled_);
+    settings.setValue("animation/autoKeyEnabled", animationState_.autoKeyEnabled);
     appendScriptComment("Saved Phoenix Editor preferences");
     statusBar()->showMessage("Preferences saved", 2000);
 }
@@ -1299,9 +1168,11 @@ void MainWindow::loadPreferences()
         restoreState(state);
     }
 
-    autoKeyEnabled_ = settings.value("animation/autoKeyEnabled", false).toBool();
+    animationState_ = EditorAnimationController::setAutoKeyEnabled(
+        animationState_,
+        settings.value("animation/autoKeyEnabled", false).toBool());
     if (viewport_ != nullptr) {
-        viewport_->setAutoKeyEnabled(autoKeyEnabled_);
+        viewport_->setAutoKeyEnabled(animationState_.autoKeyEnabled);
     }
 }
 
@@ -1709,166 +1580,53 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
         selectObject(objectId, true);
         return true;
     };
-    context.createPrimitive = [this](PrimitiveMeshFactory::Type type) {
-        const QString objectName = generateUniqueScriptName(primitivePrefix(type));
-        const SceneObject::Id objectId = viewport_->createPrimitive(type, objectName);
-        if (objectId == 0) {
-            return QString();
-        }
-
-        refreshScenePanels();
-        selectObject(objectId, true);
-        return objectName;
+    EditorSceneMutationController::ScriptBindings sceneBindings;
+    sceneBindings.findObjectIdByName = [this](const QString& objectName) {
+        return findObjectIdByName(objectName);
     };
-    context.createJoint = [this](const QString& requestedName) {
-        const QString objectName = generateUniqueObjectName(requestedName.trimmed().isEmpty() ? defaultJointPrefix() : requestedName.trimmed());
-        const SceneObject::Id parentId = selectedObjectId_ != 0 ? selectedObjectId_ : 0;
-        const SceneObject::Id objectId = viewport_->createJoint(objectName, parentId);
-        if (objectId == 0) {
-            return QString();
-        }
-
-        refreshScenePanels();
-        selectObject(objectId, true);
-        return objectName;
+    sceneBindings.generateUniqueObjectName = [this](const QString& baseName, std::uint64_t ignoreObjectId) {
+        return generateUniqueObjectName(baseName, ignoreObjectId);
     };
-    context.renameObject = [this](const QString& sourceName, const QString& newName) {
-        const std::uint64_t objectId = findObjectIdByName(sourceName);
-        if (objectId == 0 || newName.trimmed().isEmpty()) {
-            return QString();
-        }
-
-        const QString uniqueName = generateUniqueObjectName(newName.trimmed(), objectId);
-        const EditorSceneMutationController::MutationResult mutation =
-            EditorSceneMutationController::renameObject(viewport_->sceneSnapshot(), objectId, uniqueName);
-        if (!mutation.success) {
-            return QString();
-        }
-
+    sceneBindings.generateUniqueScriptName = [this](const QString& prefix) {
+        return generateUniqueScriptName(prefix);
+    };
+    sceneBindings.primitiveScriptPrefix = [](PrimitiveMeshFactory::Type type) {
+        return primitivePrefix(type);
+    };
+    sceneBindings.selectedObjectId = [this]() {
+        return selectedObjectId_;
+    };
+    sceneBindings.findObject = [this](std::uint64_t objectId) {
+        return viewport_->findObject(objectId);
+    };
+    sceneBindings.sceneSnapshot = [this]() {
+        return viewport_->sceneSnapshot();
+    };
+    sceneBindings.createPrimitive = [this](PrimitiveMeshFactory::Type type, const QString& objectName) {
+        return viewport_->createPrimitive(type, objectName);
+    };
+    sceneBindings.createJoint = [this](const QString& objectName, std::uint64_t parentId) {
+        return viewport_->createJoint(objectName, parentId);
+    };
+    sceneBindings.applySceneMutation = [this](const Scene& scene, std::uint64_t objectId, bool clearSelectionAfter) {
         recordUndoState();
-        viewport_->replaceScene(mutation.scene);
+        viewport_->replaceScene(scene);
         refreshScenePanels();
-        selectObject(objectId, true);
-        return uniqueName;
+        if (clearSelectionAfter || objectId == 0) {
+            clearInspector();
+        } else {
+            selectObject(objectId, true);
+        }
     };
-    context.duplicateObject = [this](const QString& sourceName) {
-        const std::uint64_t objectId = findObjectIdByName(sourceName);
-        if (objectId == 0) {
-            return QString();
-        }
-
-        const SceneObject* sourceObject = viewport_->findObject(objectId);
-        if (sourceObject == nullptr) {
-            return QString();
-        }
-
-        const QString sourceObjectName = sourceObject->name();
-        const QString duplicateName = generateUniqueObjectName(QString("%1Copy").arg(sourceObjectName));
-        const EditorSceneMutationController::MutationResult mutation =
-            EditorSceneMutationController::duplicateObject(viewport_->sceneSnapshot(), objectId, duplicateName);
-        if (!mutation.success) {
-            return QString();
-        }
-
-        recordUndoState();
-        viewport_->replaceScene(mutation.scene);
+    sceneBindings.applyLiveMutation = [this](std::uint64_t objectId, bool clearSelectionAfter) {
         refreshScenePanels();
-        selectObject(mutation.affectedObjectId, true);
-        return duplicateName;
+        if (clearSelectionAfter || objectId == 0) {
+            clearInspector();
+        } else {
+            selectObject(objectId, true);
+        }
     };
-    context.groupObject = [this](const QString& sourceName) {
-        const std::uint64_t objectId = findObjectIdByName(sourceName);
-        if (objectId == 0) {
-            return QString();
-        }
-
-        const QString groupName = generateUniqueObjectName("group");
-        const EditorSceneMutationController::MutationResult mutation =
-            EditorSceneMutationController::groupObject(viewport_->sceneSnapshot(), objectId, groupName);
-        if (!mutation.success) {
-            return QString();
-        }
-
-        recordUndoState();
-        viewport_->replaceScene(mutation.scene);
-        refreshScenePanels();
-        selectObject(mutation.affectedObjectId, true);
-        return groupName;
-    };
-    context.deleteObject = [this](const QString& sourceName) {
-        const std::uint64_t objectId = findObjectIdByName(sourceName);
-        if (objectId == 0) {
-            return false;
-        }
-
-        const EditorSceneMutationController::MutationResult mutation =
-            EditorSceneMutationController::deleteObject(viewport_->sceneSnapshot(), objectId);
-        if (!mutation.success) {
-            return false;
-        }
-
-        recordUndoState();
-        viewport_->replaceScene(mutation.scene);
-        refreshScenePanels();
-        clearInspector();
-        return true;
-    };
-    context.parentObject = [this](const QString& childName, const QString& parentName) {
-        const std::uint64_t childId = findObjectIdByName(childName);
-        const std::uint64_t parentId = findObjectIdByName(parentName);
-        if (childId == 0 || parentId == 0) {
-            return false;
-        }
-
-        const EditorSceneMutationController::MutationResult mutation =
-            EditorSceneMutationController::reparentObject(viewport_->sceneSnapshot(), childId, parentId);
-        if (!mutation.success) {
-            return false;
-        }
-
-        recordUndoState();
-        viewport_->replaceScene(mutation.scene);
-        refreshScenePanels();
-        selectObject(childId, true);
-        return true;
-    };
-    context.unparentObject = [this](const QString& childName) {
-        const std::uint64_t childId = findObjectIdByName(childName);
-        if (childId == 0) {
-            return false;
-        }
-
-        const EditorSceneMutationController::MutationResult mutation =
-            EditorSceneMutationController::reparentObject(viewport_->sceneSnapshot(), childId, 0);
-        if (!mutation.success) {
-            return false;
-        }
-
-        recordUndoState();
-        viewport_->replaceScene(mutation.scene);
-        refreshScenePanels();
-        selectObject(childId, true);
-        return true;
-    };
-    context.bindSkin = [this](const QString& meshName, const QString& jointName) {
-        const std::uint64_t meshId = findObjectIdByName(meshName);
-        const std::uint64_t jointId = findObjectIdByName(jointName);
-        if (meshId == 0 || jointId == 0) {
-            return false;
-        }
-
-        const EditorSceneMutationController::MutationResult mutation =
-            EditorSceneMutationController::bindSkin(viewport_->sceneSnapshot(), meshId, jointId);
-        if (!mutation.success) {
-            return false;
-        }
-
-        recordUndoState();
-        viewport_->replaceScene(mutation.scene);
-        refreshScenePanels();
-        selectObject(meshId, true);
-        return true;
-    };
+    EditorSceneMutationController::bindScriptCommands(context, sceneBindings);
     context.setJointOrientation = [this](const QString& objectName, const QVector3D& eulerDegrees) {
         const std::uint64_t objectId = findObjectIdByName(objectName);
         if (objectId == 0) {
@@ -2060,90 +1818,30 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
 
         return false;
     };
-    context.setCurrentFrame = [this](int frame) {
-        setCurrentFrame(frame, false);
+    EditorAnimationScriptBindings animationBindings;
+    animationBindings.findObjectIdByName = [this](const QString& objectName) {
+        return findObjectIdByName(objectName);
     };
-    context.setKeyframe = [this](const QString& objectName, int frame) {
-        const std::uint64_t objectId = findObjectIdByName(objectName);
-        if (objectId == 0) {
-            return false;
-        }
-
+    animationBindings.selectObjectById = [this](std::uint64_t objectId) {
         selectObject(objectId, true);
-        if (frame >= 0) {
-            setCurrentFrame(frame, false);
-        }
-
-        return viewport_->setObjectKeyframe(objectId, currentFrame_);
     };
-    context.deleteKeyframe = [this](const QString& objectName, int frame) {
-        const std::uint64_t objectId = findObjectIdByName(objectName);
-        if (objectId == 0) {
-            return false;
-        }
-
-        selectObject(objectId, true);
-        if (frame >= 0) {
-            setCurrentFrame(frame, false);
-        }
-
-        return viewport_->removeObjectKeyframe(objectId, currentFrame_);
+    animationBindings.sceneSnapshot = [this]() {
+        return viewport_->sceneSnapshot();
     };
-    context.copyKeyframe = [this](const QString& objectName, int sourceFrame, int targetFrame) {
-        const std::uint64_t objectId = findObjectIdByName(objectName);
-        if (objectId == 0) {
-            return false;
-        }
-
-        Scene updatedScene = viewport_->sceneSnapshot();
-        if (!updatedScene.duplicateObjectKeyframe(objectId, sourceFrame, targetFrame)) {
-            return false;
-        }
-
+    animationBindings.animationState = [this]() {
+        return animationState_;
+    };
+    animationBindings.applySceneMutation = [this](const Scene& scene, std::uint64_t objectId, int currentFrame) {
         recordUndoState();
-        viewport_->replaceScene(updatedScene);
+        viewport_->replaceScene(scene);
         refreshScenePanels();
         selectObject(objectId, true);
-        setCurrentFrame(targetFrame, false);
-        return true;
+        applyAnimationState(EditorAnimationController::setCurrentFrame(animationState_, currentFrame));
     };
-    context.shiftKeyframes = [this](const QString& objectName, int frameDelta) {
-        const std::uint64_t objectId = findObjectIdByName(objectName);
-        if (objectId == 0) {
-            return false;
-        }
-
-        Scene updatedScene = viewport_->sceneSnapshot();
-        if (!updatedScene.offsetObjectKeyframes(objectId, frameDelta)) {
-            return false;
-        }
-
-        recordUndoState();
-        viewport_->replaceScene(updatedScene);
-        refreshScenePanels();
-        selectObject(objectId, true);
-        setCurrentFrame(currentFrame_ + frameDelta, false);
-        return true;
+    animationBindings.applyAnimationState = [this](const EditorAnimationState& state) {
+        applyAnimationState(state);
     };
-    context.setAutoKey = [this](bool enabled) {
-        setAutoKeyEnabled(enabled, false);
-    };
-    context.setPlaybackRange = [this](int startFrame, int endFrame) {
-        setPlaybackRange(startFrame, endFrame, false);
-    };
-    context.setPlaybackState = [this](bool playing) {
-        if (playbackTimer_ == nullptr || playPauseButton_ == nullptr) {
-            return;
-        }
-
-        if (playing) {
-            playbackTimer_->start();
-            playPauseButton_->setText("||");
-        } else {
-            playbackTimer_->stop();
-            playPauseButton_->setText(">");
-        }
-    };
+    EditorAnimationController::bindScriptCommands(context, animationBindings);
     return context;
 }
 
@@ -2274,7 +1972,7 @@ void MainWindow::restoreHistoryState(const EditorHistoryState& state)
 {
     restoringHistory_ = true;
     viewport_->replaceScene(state.scene);
-    setCurrentFrame(state.currentFrame, false);
+    applyAnimationState(EditorAnimationController::setCurrentFrame(animationState_, state.currentFrame), false);
     markedHierarchyParentId_ = state.markedHierarchyParentId;
     refreshScenePanels();
     if (state.selectedObjectId != 0 && viewport_->containsObject(state.selectedObjectId)) {
@@ -2289,7 +1987,7 @@ void MainWindow::restoreHistoryState(const EditorHistoryState& state)
 void MainWindow::recordUndoState()
 {
     historyController_.recordUndoState(
-        historyController_.captureState(viewport_->scene(), selectedObjectId_, markedHierarchyParentId_, currentFrame_));
+        historyController_.captureState(viewport_->scene(), selectedObjectId_, markedHierarchyParentId_, animationState_.currentFrame));
     updateUndoRedoActions();
 }
 
@@ -2297,7 +1995,7 @@ void MainWindow::undoLastChange()
 {
     EditorHistoryState previousState;
     if (!historyController_.tryTakeUndoState(
-            historyController_.captureState(viewport_->scene(), selectedObjectId_, markedHierarchyParentId_, currentFrame_),
+            historyController_.captureState(viewport_->scene(), selectedObjectId_, markedHierarchyParentId_, animationState_.currentFrame),
             &previousState)) {
         return;
     }
@@ -2309,7 +2007,7 @@ void MainWindow::redoLastChange()
 {
     EditorHistoryState nextState;
     if (!historyController_.tryTakeRedoState(
-            historyController_.captureState(viewport_->scene(), selectedObjectId_, markedHierarchyParentId_, currentFrame_),
+            historyController_.captureState(viewport_->scene(), selectedObjectId_, markedHierarchyParentId_, animationState_.currentFrame),
             &nextState)) {
         return;
     }
@@ -2418,12 +2116,6 @@ void MainWindow::clearInspector()
     visibilityCheckBox_->setText("on");
     updatingChannelBox_ = false;
     setChannelBoxEnabled(false);
-    if (setKeyButton_ != nullptr) {
-        setKeyButton_->setEnabled(false);
-    }
-    if (deleteKeyButton_ != nullptr) {
-        deleteKeyButton_->setEnabled(false);
-    }
     if (markHierarchyParentAction_ != nullptr) {
         markHierarchyParentAction_->setEnabled(false);
     }
@@ -2467,12 +2159,6 @@ void MainWindow::updateInspector(std::uint64_t objectId)
     updateChannelBox(objectId);
 
     const bool canFrame = object->isVisible() && object->worldBounds().isValid();
-    if (setKeyButton_ != nullptr) {
-        setKeyButton_->setEnabled(true);
-    }
-    if (deleteKeyButton_ != nullptr) {
-        deleteKeyButton_->setEnabled(object->hasTransformKeyframe(currentFrame_));
-    }
     if (markHierarchyParentAction_ != nullptr) {
         markHierarchyParentAction_->setEnabled(true);
     }
@@ -2572,6 +2258,11 @@ void MainWindow::syncOutlinerSelection(std::uint64_t objectId)
     }
 
     outlinerTree_->clearSelection();
+}
+
+EditorAnimationTimelineViewModel MainWindow::buildAnimationTimelineViewModel() const
+{
+    return EditorAnimationController::buildTimelineViewModel(viewport_->scene(), selectedObjectId_, animationState_);
 }
 
 void MainWindow::setTransformUiMode(TransformUiMode mode)
@@ -2712,24 +2403,25 @@ void MainWindow::updateWindowTitle()
     setWindowTitle(QString("%1 - Phoenix Editor Beta").arg(sceneName));
 }
 
-void MainWindow::setCurrentFrame(int frame, bool logToScript)
+void MainWindow::applyAnimationState(const EditorAnimationState& state, bool logToScript)
 {
-    const int clampedFrame = qBound(playbackStartFrame_, frame, playbackEndFrame_);
-    currentFrame_ = clampedFrame;
-    viewport_->setCurrentFrame(clampedFrame);
+    animationState_ = state;
+
+    if (viewport_ != nullptr) {
+        viewport_->setAutoKeyEnabled(animationState_.autoKeyEnabled);
+        viewport_->setCurrentFrame(animationState_.currentFrame);
+    }
 
     updatingTimeSlider_ = true;
-    if (timeSlider_ != nullptr) {
-        timeSlider_->setValue(clampedFrame);
-    }
-    if (currentFrameSpinBox_ != nullptr) {
-        currentFrameSpinBox_->setValue(clampedFrame);
+    if (animationTimelinePanel_ != nullptr) {
+        animationTimelinePanel_->setViewModel(buildAnimationTimelineViewModel());
     }
     updatingTimeSlider_ = false;
 
+    syncPlaybackTimer();
     refreshAnimationTimelineUi();
 
-    if (selectedObjectId_ != 0 && viewport_->containsObject(selectedObjectId_)) {
+    if (selectedObjectId_ != 0 && viewport_ != nullptr && viewport_->containsObject(selectedObjectId_)) {
         updateChannelBox(selectedObjectId_);
         const SceneObject* object = viewport_->findObject(selectedObjectId_);
         const bool canFrame = object != nullptr && object->isVisible() && object->worldBounds().isValid();
@@ -2738,11 +2430,28 @@ void MainWindow::setCurrentFrame(int frame, bool logToScript)
     }
 
     if (logToScript) {
-        appendScriptHistoryLine(QString("currentTime %1;").arg(currentFrame_));
-        appendScriptHistoryLine(QString("// Result: current frame %1 //").arg(currentFrame_));
+        appendScriptHistoryLine(QString("currentTime %1;").arg(animationState_.currentFrame));
+        appendScriptHistoryLine(QString("// Result: current frame %1 //").arg(animationState_.currentFrame));
+    }
+}
+
+void MainWindow::syncPlaybackTimer()
+{
+    if (playbackTimer_ == nullptr) {
+        return;
     }
 
-    statusBar()->showMessage(QString("Current frame: %1").arg(currentFrame_), 800);
+    if (animationState_.playing) {
+        playbackTimer_->start();
+    } else {
+        playbackTimer_->stop();
+    }
+}
+
+void MainWindow::setCurrentFrame(int frame, bool logToScript)
+{
+    applyAnimationState(EditorAnimationController::setCurrentFrame(animationState_, frame), logToScript);
+    statusBar()->showMessage(QString("Current frame: %1").arg(animationState_.currentFrame), 800);
 }
 
 void MainWindow::setKeyForSelection(bool logToScript)
@@ -2758,26 +2467,32 @@ void MainWindow::setKeyForSelection(bool logToScript)
         return;
     }
 
-    if (!viewport_->setObjectKeyframe(selectedObjectId_, currentFrame_)) {
-        qCWarning(logAnimation) << "set key failed:" << "objectId=" << selectedObjectId_ << "frame=" << currentFrame_;
+    const EditorAnimationController::SceneMutationResult result =
+        EditorAnimationController::setKeyframe(viewport_->scene(), selectedObjectId_, animationState_.currentFrame);
+    if (!result.success) {
+        qCWarning(logAnimation) << "set key failed:" << "objectId=" << selectedObjectId_ << "frame=" << animationState_.currentFrame;
         statusBar()->showMessage("Set key failed", 1500);
         return;
     }
 
+    const std::uint64_t objectId = selectedObjectId_;
+    recordUndoState();
+    viewport_->replaceScene(result.scene);
+    refreshScenePanels();
+    selectObject(objectId, true);
+    applyAnimationState(EditorAnimationController::setCurrentFrame(animationState_, result.currentFrame));
+
     qCInfo(logAnimation) << "set key:"
             << "object=" << objectDisplayName(*object)
-            << "objectId=" << selectedObjectId_
-            << "frame=" << currentFrame_;
-
-    refreshAnimationTimelineUi();
-    updateChannelBox(selectedObjectId_);
+            << "objectId=" << objectId
+            << "frame=" << animationState_.currentFrame;
 
     if (logToScript) {
-        appendScriptHistoryLine(QString("setKeyframe %1 -t %2;").arg(objectDisplayName(*object)).arg(currentFrame_));
-        appendScriptHistoryLine(QString("// Result: key set on %1 at frame %2 //").arg(objectDisplayName(*object)).arg(currentFrame_));
+        appendScriptHistoryLine(QString("setKeyframe %1 -t %2;").arg(objectDisplayName(*object)).arg(animationState_.currentFrame));
+        appendScriptHistoryLine(QString("// Result: key set on %1 at frame %2 //").arg(objectDisplayName(*object)).arg(animationState_.currentFrame));
     }
 
-    statusBar()->showMessage(QString("Key set at frame %1").arg(currentFrame_), 1500);
+    statusBar()->showMessage(QString("Key set at frame %1").arg(animationState_.currentFrame), 1500);
 }
 
 void MainWindow::deleteKeyForSelection(bool logToScript)
@@ -2793,32 +2508,38 @@ void MainWindow::deleteKeyForSelection(bool logToScript)
         return;
     }
 
-    if (!object->hasTransformKeyframe(currentFrame_)) {
-        statusBar()->showMessage(QString("No key at frame %1").arg(currentFrame_), 1500);
+    if (!object->hasTransformKeyframe(animationState_.currentFrame)) {
+        statusBar()->showMessage(QString("No key at frame %1").arg(animationState_.currentFrame), 1500);
         return;
     }
 
     const QString objectName = objectDisplayName(*object);
-    if (!viewport_->removeObjectKeyframe(selectedObjectId_, currentFrame_)) {
-        qCWarning(logAnimation) << "delete key failed:" << "objectId=" << selectedObjectId_ << "frame=" << currentFrame_;
+    const EditorAnimationController::SceneMutationResult result =
+        EditorAnimationController::deleteKeyframe(viewport_->scene(), selectedObjectId_, animationState_.currentFrame);
+    if (!result.success) {
+        qCWarning(logAnimation) << "delete key failed:" << "objectId=" << selectedObjectId_ << "frame=" << animationState_.currentFrame;
         statusBar()->showMessage("Delete key failed", 1500);
         return;
     }
 
+    const std::uint64_t objectId = selectedObjectId_;
+    recordUndoState();
+    viewport_->replaceScene(result.scene);
+    refreshScenePanels();
+    selectObject(objectId, true);
+    applyAnimationState(EditorAnimationController::setCurrentFrame(animationState_, result.currentFrame));
+
     qCInfo(logAnimation) << "delete key:"
             << "object=" << objectName
-            << "objectId=" << selectedObjectId_
-            << "frame=" << currentFrame_;
-
-    refreshAnimationTimelineUi();
-    updateChannelBox(selectedObjectId_);
+            << "objectId=" << objectId
+            << "frame=" << animationState_.currentFrame;
 
     if (logToScript) {
-        appendScriptHistoryLine(QString("cutKey %1 -t %2;").arg(objectName).arg(currentFrame_));
-        appendScriptHistoryLine(QString("// Result: deleted key on %1 at frame %2 //").arg(objectName).arg(currentFrame_));
+        appendScriptHistoryLine(QString("cutKey %1 -t %2;").arg(objectName).arg(animationState_.currentFrame));
+        appendScriptHistoryLine(QString("// Result: deleted key on %1 at frame %2 //").arg(objectName).arg(animationState_.currentFrame));
     }
 
-    statusBar()->showMessage(QString("Deleted key at frame %1").arg(currentFrame_), 1500);
+    statusBar()->showMessage(QString("Deleted key at frame %1").arg(animationState_.currentFrame), 1500);
 }
 
 void MainWindow::duplicateCurrentKeyForSelection(bool logToScript)
@@ -2834,17 +2555,18 @@ void MainWindow::duplicateCurrentKeyForSelection(bool logToScript)
         return;
     }
 
-    if (!object->hasTransformKeyframe(currentFrame_)) {
-        statusBar()->showMessage(QString("No key at frame %1 to duplicate").arg(currentFrame_), 1500);
+    if (!object->hasTransformKeyframe(animationState_.currentFrame)) {
+        statusBar()->showMessage(QString("No key at frame %1 to duplicate").arg(animationState_.currentFrame), 1500);
         return;
     }
 
     const std::uint64_t objectId = selectedObjectId_;
     const QString objectName = objectDisplayName(*object);
-    const int sourceFrame = currentFrame_;
-    const int targetFrame = currentFrame_ + 1;
-    Scene updatedScene = viewport_->sceneSnapshot();
-    if (!updatedScene.duplicateObjectKeyframe(objectId, sourceFrame, targetFrame)) {
+    const int sourceFrame = animationState_.currentFrame;
+    const int targetFrame = animationState_.currentFrame + 1;
+    const EditorAnimationController::SceneMutationResult result =
+        EditorAnimationController::duplicateKeyframe(viewport_->scene(), objectId, sourceFrame, targetFrame);
+    if (!result.success) {
         qCWarning(logAnimation) << "duplicate key failed:"
                 << "objectId=" << objectId
                 << "sourceFrame=" << sourceFrame
@@ -2854,10 +2576,10 @@ void MainWindow::duplicateCurrentKeyForSelection(bool logToScript)
     }
 
     recordUndoState();
-    viewport_->replaceScene(updatedScene);
+    viewport_->replaceScene(result.scene);
     refreshScenePanels();
     selectObject(objectId, true);
-    setCurrentFrame(targetFrame, false);
+    applyAnimationState(EditorAnimationController::setCurrentFrame(animationState_, result.currentFrame));
 
     qCInfo(logAnimation) << "duplicate key:"
             << "object=" << objectName
@@ -2893,24 +2615,25 @@ void MainWindow::shiftSelectedObjectKeyframes(int frameDelta, bool logToScript)
 
     const std::uint64_t objectId = selectedObjectId_;
     const QString objectName = objectDisplayName(*object);
-    Scene updatedScene = viewport_->sceneSnapshot();
-    if (!updatedScene.offsetObjectKeyframes(objectId, frameDelta)) {
+    const EditorAnimationController::SceneMutationResult result =
+        EditorAnimationController::shiftKeyframes(viewport_->scene(), objectId, frameDelta);
+    if (!result.success) {
         qCWarning(logAnimation) << "shift keys failed:" << "objectId=" << objectId << "delta=" << frameDelta;
         statusBar()->showMessage("Shift keys failed", 1500);
         return;
     }
 
     recordUndoState();
-    viewport_->replaceScene(updatedScene);
+    viewport_->replaceScene(result.scene);
     refreshScenePanels();
     selectObject(objectId, true);
-    setCurrentFrame(currentFrame_ + frameDelta, false);
+    applyAnimationState(EditorAnimationController::setCurrentFrame(animationState_, result.currentFrame));
 
     qCInfo(logAnimation) << "shift keys:"
             << "object=" << objectName
             << "objectId=" << objectId
             << "delta=" << frameDelta
-            << "newCurrentFrame=" << (currentFrame_ + frameDelta);
+            << "newCurrentFrame=" << animationState_.currentFrame;
 
     if (logToScript) {
         appendScriptHistoryLine(QString("shiftKey %1 -by %2;").arg(objectName).arg(frameDelta));
@@ -2922,9 +2645,7 @@ void MainWindow::shiftSelectedObjectKeyframes(int frameDelta, bool logToScript)
 
 void MainWindow::setAutoKeyEnabled(bool enabled, bool logToScript)
 {
-    autoKeyEnabled_ = enabled;
-    viewport_->setAutoKeyEnabled(enabled);
-    refreshAnimationTimelineUi();
+    applyAnimationState(EditorAnimationController::setAutoKeyEnabled(animationState_, enabled));
 
     if (logToScript) {
         appendScriptHistoryLine(QString("autoKeyframe -state %1;").arg(enabled ? "on" : "off"));
@@ -2936,39 +2657,18 @@ void MainWindow::setAutoKeyEnabled(bool enabled, bool logToScript)
 
 void MainWindow::setPlaybackRange(int startFrame, int endFrame, bool logToScript)
 {
-    if (startFrame > endFrame) {
-        std::swap(startFrame, endFrame);
-    }
-
-    playbackStartFrame_ = startFrame;
-    playbackEndFrame_ = endFrame;
-
-    updatingTimeSlider_ = true;
-    if (playbackStartSpinBox_ != nullptr) {
-        playbackStartSpinBox_->setValue(playbackStartFrame_);
-    }
-    if (playbackEndSpinBox_ != nullptr) {
-        playbackEndSpinBox_->setValue(playbackEndFrame_);
-    }
-    if (timeSlider_ != nullptr) {
-        timeSlider_->setRange(playbackStartFrame_, playbackEndFrame_);
-    }
-    if (currentFrameSpinBox_ != nullptr) {
-        currentFrameSpinBox_->setRange(playbackStartFrame_, playbackEndFrame_);
-    }
-    updatingTimeSlider_ = false;
+    applyAnimationState(EditorAnimationController::setPlaybackRange(animationState_, startFrame, endFrame));
 
     if (logToScript) {
-        appendScriptHistoryLine(QString("playbackOptions -min %1 -max %2;").arg(playbackStartFrame_).arg(playbackEndFrame_));
-        appendScriptHistoryLine(QString("// Result: playback range %1 to %2 //").arg(playbackStartFrame_).arg(playbackEndFrame_));
+        appendScriptHistoryLine(QString("playbackOptions -min %1 -max %2;").arg(animationState_.playbackStartFrame).arg(animationState_.playbackEndFrame));
+        appendScriptHistoryLine(QString("// Result: playback range %1 to %2 //").arg(animationState_.playbackStartFrame).arg(animationState_.playbackEndFrame));
     }
-
-    setCurrentFrame(currentFrame_, logToScript);
 }
 
 void MainWindow::stepFrame(int delta)
 {
-    setCurrentFrame(currentFrame_ + delta);
+    applyAnimationState(EditorAnimationController::stepFrame(animationState_, delta), true);
+    statusBar()->showMessage(QString("Current frame: %1").arg(animationState_.currentFrame), 800);
 }
 
 void MainWindow::jumpToSelectedObjectKeyframe(bool forward, bool logToScript)
@@ -2984,20 +2684,22 @@ void MainWindow::jumpToSelectedObjectKeyframe(bool forward, bool logToScript)
         return;
     }
 
-    const int targetFrame = forward
-        ? viewport_->nextObjectKeyframe(selectedObjectId_, currentFrame_)
-        : viewport_->previousObjectKeyframe(selectedObjectId_, currentFrame_);
-    if (targetFrame == currentFrame_) {
+    const int targetFrame = EditorAnimationController::jumpToKeyframe(
+        viewport_->scene(),
+        selectedObjectId_,
+        animationState_.currentFrame,
+        forward);
+    if (targetFrame == animationState_.currentFrame) {
         qCInfo(logAnimation) << "jump key skipped:"
                 << "object=" << objectDisplayName(*object)
                 << "objectId=" << selectedObjectId_
                 << "direction=" << (forward ? "next" : "previous")
-                << "frame=" << currentFrame_;
+                << "frame=" << animationState_.currentFrame;
         statusBar()->showMessage(forward ? "No next key" : "No previous key", 1200);
         return;
     }
 
-    setCurrentFrame(targetFrame, false);
+    applyAnimationState(EditorAnimationController::setCurrentFrame(animationState_, targetFrame));
 
     qCInfo(logAnimation) << "jump key:"
             << "object=" << objectDisplayName(*object)
@@ -3014,19 +2716,13 @@ void MainWindow::jumpToSelectedObjectKeyframe(bool forward, bool logToScript)
 
 void MainWindow::togglePlayback()
 {
-    if (playbackTimer_ == nullptr || playPauseButton_ == nullptr) {
-        return;
-    }
-
-    if (playbackTimer_->isActive()) {
-        playbackTimer_->stop();
-        playPauseButton_->setText(">");
+    const bool playing = !animationState_.playing;
+    applyAnimationState(EditorAnimationController::setPlaybackState(animationState_, playing));
+    if (!playing) {
         appendScriptHistoryLine("play -state off;");
         appendScriptHistoryLine("// Result: playback stopped //");
         statusBar()->showMessage("Playback stopped", 1000);
     } else {
-        playbackTimer_->start();
-        playPauseButton_->setText("||");
         appendScriptHistoryLine("play -state on;");
         appendScriptHistoryLine("// Result: playback started //");
         statusBar()->showMessage("Playback started", 1000);
@@ -3035,8 +2731,7 @@ void MainWindow::togglePlayback()
 
 void MainWindow::advancePlayback()
 {
-    const int nextFrame = currentFrame_ >= playbackEndFrame_ ? playbackStartFrame_ : currentFrame_ + 1;
-    setCurrentFrame(nextFrame, false);
+    applyAnimationState(EditorAnimationController::advancePlayback(animationState_));
 }
 
 PrimitiveMeshFactory::Type MainWindow::primitiveTypeFromItem(const QListWidgetItem* item) const
@@ -3090,127 +2785,8 @@ void MainWindow::updateChannelBox(std::uint64_t objectId)
 
 void MainWindow::refreshAnimationTimelineUi()
 {
-    QVector<int> keyframes;
-    bool hasSelection = false;
-    bool currentFrameKeyed = false;
-    bool hasAnyKeys = false;
-    QString objectName = "No selection";
-
-    if (selectedObjectId_ != 0) {
-        const SceneObject* object = viewport_->findObject(selectedObjectId_);
-        if (object != nullptr) {
-            hasSelection = true;
-            objectName = objectDisplayName(*object);
-            const TransformKeyframeTrack& track = object->transformKeyframes();
-            hasAnyKeys = !track.isEmpty();
-            keyframes.reserve(track.size());
-            for (const TransformKeyframe& keyframe : track) {
-                keyframes.append(keyframe.frame);
-                if (keyframe.frame == currentFrame_) {
-                    currentFrameKeyed = true;
-                }
-            }
-        }
-    }
-
-    if (keyframeTimelineWidget_ != nullptr) {
-        keyframeTimelineWidget_->setFrameRange(playbackStartFrame_, playbackEndFrame_);
-        keyframeTimelineWidget_->setCurrentFrame(currentFrame_);
-        keyframeTimelineWidget_->setKeyframes(keyframes);
-        keyframeTimelineWidget_->setCurrentFrameKeyed(currentFrameKeyed);
-    }
-
-    if (setKeyButton_ != nullptr) {
-        setKeyButton_->setText(currentFrameKeyed ? "Key Selected" : "Key Selected");
-        setKeyButton_->setStyleSheet(currentFrameKeyed
-                ? "QPushButton { background-color: #b86d1f; color: white; font-weight: 600; }"
-                : "QPushButton { background-color: #4a4a4a; color: white; }");
-        if (!hasSelection) {
-            setKeyButton_->setText("Key Selected");
-            setKeyButton_->setStyleSheet(QString());
-        }
-    }
-
-    if (deleteKeyButton_ != nullptr) {
-        deleteKeyButton_->setEnabled(hasSelection && currentFrameKeyed);
-        deleteKeyButton_->setStyleSheet(currentFrameKeyed
-                ? "QPushButton { background-color: #565656; color: white; }"
-                : QString());
-    }
-
-    if (duplicateKeyButton_ != nullptr) {
-        duplicateKeyButton_->setEnabled(hasSelection && currentFrameKeyed);
-    }
-
-    if (shiftKeysLeftButton_ != nullptr) {
-        shiftKeysLeftButton_->setEnabled(hasSelection && hasAnyKeys);
-    }
-
-    if (shiftKeysRightButton_ != nullptr) {
-        shiftKeysRightButton_->setEnabled(hasSelection && hasAnyKeys);
-    }
-
-    if (previousKeyButton_ != nullptr) {
-        previousKeyButton_->setEnabled(hasSelection && hasAnyKeys);
-    }
-
-    if (nextKeyButton_ != nullptr) {
-        nextKeyButton_->setEnabled(hasSelection && hasAnyKeys);
-    }
-
-    if (duplicateKeyAction_ != nullptr) {
-        duplicateKeyAction_->setEnabled(hasSelection && currentFrameKeyed);
-    }
-
-    if (shiftKeysLeftAction_ != nullptr) {
-        shiftKeysLeftAction_->setEnabled(hasSelection && hasAnyKeys);
-    }
-
-    if (shiftKeysRightAction_ != nullptr) {
-        shiftKeysRightAction_->setEnabled(hasSelection && hasAnyKeys);
-    }
-
-    if (previousKeyAction_ != nullptr) {
-        previousKeyAction_->setEnabled(hasSelection && hasAnyKeys);
-    }
-
-    if (nextKeyAction_ != nullptr) {
-        nextKeyAction_->setEnabled(hasSelection && hasAnyKeys);
-    }
-
-    if (autoKeyButton_ != nullptr) {
-        if (autoKeyButton_->isChecked() != autoKeyEnabled_) {
-            autoKeyButton_->setChecked(autoKeyEnabled_);
-        }
-        autoKeyButton_->setStyleSheet(autoKeyEnabled_
-                ? "QPushButton { background-color: #8f2424; color: white; font-weight: 600; }"
-                : QString());
-    }
-
-    if (timelineStatusLabel_ != nullptr) {
-        if (!hasSelection) {
-            timelineStatusLabel_->setText(autoKeyEnabled_ ? "No selection | Auto Key on" : "No selection");
-            timelineStatusLabel_->setStyleSheet("color: #bdbdbd;");
-        } else if (currentFrameKeyed) {
-            timelineStatusLabel_->setText(QString("%1 | %2 keys | frame %3 keyed%4")
-                    .arg(objectName)
-                    .arg(keyframes.size())
-                    .arg(currentFrame_)
-                    .arg(autoKeyEnabled_ ? " | Auto Key on" : ""));
-            timelineStatusLabel_->setStyleSheet("color: #ffb040; font-weight: 600;");
-        } else if (!keyframes.isEmpty()) {
-            timelineStatusLabel_->setText(QString("%1 | %2 keys | frame %3 has no key%4")
-                    .arg(objectName)
-                    .arg(keyframes.size())
-                    .arg(currentFrame_)
-                    .arg(autoKeyEnabled_ ? " | Auto Key on" : ""));
-            timelineStatusLabel_->setStyleSheet("color: #9fdcff;");
-        } else {
-            timelineStatusLabel_->setText(QString("%1 | no keys yet%2")
-                    .arg(objectName)
-                    .arg(autoKeyEnabled_ ? " | Auto Key on" : ""));
-            timelineStatusLabel_->setStyleSheet("color: #bdbdbd;");
-        }
+    if (animationTimelinePanel_ != nullptr) {
+        animationTimelinePanel_->setViewModel(buildAnimationTimelineViewModel());
     }
 }
 

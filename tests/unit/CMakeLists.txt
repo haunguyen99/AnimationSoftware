@@ -28,6 +28,8 @@ add_test(
 
 add_executable(editor_ui_tests
     EditorUiTests.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/AnimationTimelinePanel.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorAnimationController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorDocumentController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorHistoryController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorSceneMutationController.cpp

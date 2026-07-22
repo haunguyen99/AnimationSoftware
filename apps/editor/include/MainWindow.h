@@ -6,13 +6,14 @@
 
 #include <cstdint>
 
+#include "EditorAnimationController.h"
 #include "EditorHistoryController.h"
 #include "ScriptCommandSystem.h"
 #include "scene/PrimitiveMeshFactory.h"
 #include "scene/Scene.h"
 
 class ViewportWorkspaceWidget;
-class KeyframeTimelineWidget;
+class AnimationTimelinePanel;
 class QAction;
 class QToolBar;
 class QStatusBar;
@@ -116,12 +117,15 @@ private:
     void frameSelectedObject();
     void selectObject(std::uint64_t objectId, bool syncOutliner);
     void syncOutlinerSelection(std::uint64_t objectId);
+    EditorAnimationTimelineViewModel buildAnimationTimelineViewModel() const;
     void setViewCameraPreset(ViewCameraUiPreset preset);
     void setTransformUiMode(TransformUiMode mode);
     void setAxisUiOrientation(AxisUiOrientation orientation);
     void restoreDefaultWorkspaceLayout();
     void showPolygonPrimitivesWindow();
     void updateWindowTitle();
+    void applyAnimationState(const EditorAnimationState& state, bool logToScript = false);
+    void syncPlaybackTimer();
     void setCurrentFrame(int frame, bool logToScript = true);
     void setKeyForSelection(bool logToScript = true);
     void deleteKeyForSelection(bool logToScript = true);
@@ -157,21 +161,7 @@ private:
     QListWidget* polygonPrimitivesList_ = nullptr;
     QPlainTextEdit* scriptHistoryTextEdit_ = nullptr;
     QPlainTextEdit* scriptInputTextEdit_ = nullptr;
-    QSlider* timeSlider_ = nullptr;
-    KeyframeTimelineWidget* keyframeTimelineWidget_ = nullptr;
-    QSpinBox* currentFrameSpinBox_ = nullptr;
-    QSpinBox* playbackStartSpinBox_ = nullptr;
-    QSpinBox* playbackEndSpinBox_ = nullptr;
-    QPushButton* setKeyButton_ = nullptr;
-    QPushButton* deleteKeyButton_ = nullptr;
-    QPushButton* duplicateKeyButton_ = nullptr;
-    QPushButton* shiftKeysLeftButton_ = nullptr;
-    QPushButton* shiftKeysRightButton_ = nullptr;
-    QPushButton* autoKeyButton_ = nullptr;
-    QLabel* timelineStatusLabel_ = nullptr;
-    QPushButton* playPauseButton_ = nullptr;
-    QPushButton* previousKeyButton_ = nullptr;
-    QPushButton* nextKeyButton_ = nullptr;
+    AnimationTimelinePanel* animationTimelinePanel_ = nullptr;
     QTimer* playbackTimer_ = nullptr;
     QWidget* inspectorDetailsWidget_ = nullptr;
     QLabel* inspectorEmptyStateLabel_ = nullptr;
@@ -253,13 +243,10 @@ private:
     std::uint64_t hierarchyDragSourceId_ = 0;
     QPoint hierarchyDragStartPos_;
     bool hierarchyDragActive_ = false;
-    int currentFrame_ = 0;
-    int playbackStartFrame_ = 0;
-    int playbackEndFrame_ = 24;
+    EditorAnimationState animationState_;
     bool updatingChannelBox_ = false;
     bool updatingTimeSlider_ = false;
     bool restoringHistory_ = false;
-    bool autoKeyEnabled_ = false;
     bool interactivePrimitiveCreationEnabled_ = true;
     bool exitPrimitiveToolOnCompletionEnabled_ = true;
     EditorHistoryController historyController_;

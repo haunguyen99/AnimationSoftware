@@ -1,6 +1,8 @@
 find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGLWidgets OpenGL Gui)
 
 add_executable(phoenix_editor
+    src/AnimationTimelinePanel.cpp
+    src/EditorAnimationController.cpp
     src/EditorDocumentController.cpp
     src/EditorHistoryController.cpp
     src/EditorSceneMutationController.cpp
