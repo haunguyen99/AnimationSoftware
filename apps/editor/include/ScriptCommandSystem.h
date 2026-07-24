@@ -26,6 +26,7 @@ struct ScriptCommandContext
     std::function<bool(const QString& sourceName)> deleteObject;
     std::function<bool(const QString& childName, const QString& parentName)> parentObject;
     std::function<bool(const QString& childName)> unparentObject;
+    std::function<bool(const QString& meshName, const QString& jointName)> bindSkin;
     std::function<bool(const QString& objectName, const QVector3D& eulerDegrees)> setJointOrientation;
     std::function<bool(const QString& objectName)> resetJointOrientation;
     std::function<bool(const QString& objectName)> alignJointOrientationToChild;
@@ -41,6 +42,8 @@ struct ScriptCommandContext
     std::function<void(int frame)> setCurrentFrame;
     std::function<bool(const QString& objectName, int frame)> setKeyframe;
     std::function<bool(const QString& objectName, int frame)> deleteKeyframe;
+    std::function<bool(const QString& objectName, int sourceFrame, int targetFrame)> copyKeyframe;
+    std::function<bool(const QString& objectName, int frameDelta)> shiftKeyframes;
     std::function<void(bool enabled)> setAutoKey;
     std::function<void(int startFrame, int endFrame)> setPlaybackRange;
     std::function<void(bool playing)> setPlaybackState;

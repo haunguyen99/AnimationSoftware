@@ -3,11 +3,14 @@
 #include <QDebug>
 #include <QStringList>
 
+#include <limits>
+
 #include "scene/SceneMath.h"
 
 namespace
 {
 constexpr float kJointBoundsRadius = 0.2f;
+constexpr float kSkinWeightEpsilon = 0.0001f;
 
 Transform interpolateTransform(const Transform& a, const Transform& b, float t)
 {
@@ -23,6 +26,66 @@ Bounds3D jointBoundsAtPosition(const QVector3D& position)
     return Bounds3D::fromMinMax(
         position - QVector3D(kJointBoundsRadius, kJointBoundsRadius, kJointBoundsRadius),
         position + QVector3D(kJointBoundsRadius, kJointBoundsRadius, kJointBoundsRadius));
+}
+
+SceneObject::Id nearestJointId(const QVector<SceneObject::Id>& jointIds, const QVector<QVector3D>& jointWorldPositions, const QVector3D& worldPosition)
+{
+    if (jointIds.isEmpty() || jointIds.size() != jointWorldPositions.size()) {
+        return 0;
+    }
+
+    float bestDistanceSquared = std::numeric_limits<float>::max();
+    SceneObject::Id bestJointId = 0;
+    for (int index = 0; index < jointIds.size(); ++index) {
+        const float distanceSquared = (jointWorldPositions.at(index) - worldPosition).lengthSquared();
+        if (distanceSquared < bestDistanceSquared) {
+            bestDistanceSquared = distanceSquared;
+            bestJointId = jointIds.at(index);
+        }
+    }
+
+    return bestJointId;
+}
+
+VertexSkinWeights normalizedVertexWeights(const VertexSkinWeights& inputWeights)
+{
+    QHash<SceneObject::Id, float> mergedWeights;
+    for (const SkinWeight& inputWeight : inputWeights) {
+        if (inputWeight.jointId == 0 || inputWeight.weight <= 0.0f) {
+            continue;
+        }
+
+        mergedWeights[inputWeight.jointId] += inputWeight.weight;
+    }
+
+    float totalWeight = 0.0f;
+    VertexSkinWeights outputWeights;
+    outputWeights.reserve(mergedWeights.size());
+    for (auto it = mergedWeights.cbegin(); it != mergedWeights.cend(); ++it) {
+        if (it.value() <= kSkinWeightEpsilon) {
+            continue;
+        }
+
+        totalWeight += it.value();
+        outputWeights.append(SkinWeight { it.key(), it.value() });
+    }
+
+    if (totalWeight <= 0.0f) {
+        return {};
+    }
+
+    for (SkinWeight& weight : outputWeights) {
+        weight.weight /= totalWeight;
+    }
+
+    std::sort(outputWeights.begin(), outputWeights.end(), [](const SkinWeight& lhs, const SkinWeight& rhs) {
+        if (lhs.weight == rhs.weight) {
+            return lhs.jointId < rhs.jointId;
+        }
+        return lhs.weight > rhs.weight;
+    });
+
+    return outputWeights;
 }
 }
 
@@ -206,6 +269,42 @@ bool Scene::removeObjectKeyframe(SceneObject::Id id, int frame)
     return true;
 }
 
+bool Scene::duplicateObjectKeyframe(SceneObject::Id id, int sourceFrame, int targetFrame)
+{
+    SceneObject* object = findObject(id);
+    if (object == nullptr || !object->duplicateTransformKeyframe(sourceFrame, targetFrame)) {
+        return false;
+    }
+
+    currentFrame_ = targetFrame;
+    rebuildWorldData();
+    return true;
+}
+
+bool Scene::offsetObjectKeyframes(SceneObject::Id id, int frameDelta)
+{
+    SceneObject* object = findObject(id);
+    if (object == nullptr || !object->offsetAllTransformKeyframes(frameDelta)) {
+        return false;
+    }
+
+    currentFrame_ += frameDelta;
+    rebuildWorldData();
+    return true;
+}
+
+int Scene::nextObjectKeyframe(SceneObject::Id id, int frame) const
+{
+    const SceneObject* object = findObject(id);
+    return object == nullptr ? frame : object->nextTransformKeyframeAfter(frame);
+}
+
+int Scene::previousObjectKeyframe(SceneObject::Id id, int frame) const
+{
+    const SceneObject* object = findObject(id);
+    return object == nullptr ? frame : object->previousTransformKeyframeBefore(frame);
+}
+
 bool Scene::setObjectVisible(SceneObject::Id id, bool visible)
 {
     SceneObject* object = findObject(id);
@@ -274,6 +373,200 @@ bool Scene::captureBindPose(SceneObject::Id id, bool recursive)
                 captureBindPose(childId, true);
             }
         }
+    }
+
+    return true;
+}
+
+bool Scene::bindObjectToSkeleton(SceneObject::Id objectId, SceneObject::Id rootJointId)
+{
+    SceneObject* object = findObject(objectId);
+    const SceneObject* rootJoint = findObject(rootJointId);
+    if (object == nullptr || rootJoint == nullptr || !rootJoint->isJoint() || object->meshHandles().isEmpty()) {
+        return false;
+    }
+
+    const QVector<SceneObject::Id> jointIds = collectJointSubtree(rootJointId);
+    if (jointIds.isEmpty()) {
+        return false;
+    }
+
+    captureBindPose(rootJointId, true);
+    object->setSkinBindLocalTransform(object->localTransform());
+
+    QVector<QVector3D> jointWorldPositions;
+    jointWorldPositions.reserve(jointIds.size());
+    for (SceneObject::Id jointId : jointIds) {
+        jointWorldPositions.append(worldTransform(jointId) * QVector3D(0.0f, 0.0f, 0.0f));
+    }
+
+    const QMatrix4x4 objectWorld = worldTransform(objectId);
+    SkinWeightTable weights;
+    for (int meshHandle : object->meshHandles()) {
+        const MeshData* mesh = findMesh(meshHandle);
+        if (mesh == nullptr) {
+            return false;
+        }
+
+        for (const QVector3D& localPosition : mesh->positions) {
+            const QVector3D worldPosition = objectWorld * localPosition;
+            const SceneObject::Id jointId = nearestJointId(jointIds, jointWorldPositions, worldPosition);
+            if (jointId == 0) {
+                return false;
+            }
+
+            weights.append(VertexSkinWeights { SkinWeight { jointId, 1.0f } });
+        }
+    }
+
+    return setObjectSkinBinding(objectId, jointIds, weights);
+}
+
+bool Scene::setObjectSkinBinding(SceneObject::Id id, const QVector<SceneObject::Id>& jointIds, const SkinWeightTable& weights)
+{
+    SceneObject* object = findObject(id);
+    if (object == nullptr || object->meshHandles().isEmpty()) {
+        return false;
+    }
+
+    if (jointIds.isEmpty() || weights.isEmpty()) {
+        return false;
+    }
+
+    int vertexCount = 0;
+    for (int meshHandle : object->meshHandles()) {
+        const MeshData* mesh = findMesh(meshHandle);
+        if (mesh == nullptr) {
+            return false;
+        }
+        vertexCount += mesh->positions.size();
+    }
+
+    if (weights.size() != vertexCount) {
+        return false;
+    }
+
+    for (SceneObject::Id jointId : jointIds) {
+        const SceneObject* joint = findObject(jointId);
+        if (joint == nullptr || !joint->isJoint()) {
+            return false;
+        }
+    }
+
+    SkinWeightTable normalizedWeights;
+    normalizedWeights.reserve(weights.size());
+    for (const VertexSkinWeights& vertexWeights : weights) {
+        const VertexSkinWeights normalizedWeightsForVertex = normalizedVertexWeights(vertexWeights);
+        if (normalizedWeightsForVertex.isEmpty()) {
+            return false;
+        }
+
+        float weightSum = 0.0f;
+        for (const SkinWeight& weight : normalizedWeightsForVertex) {
+            if (weight.jointId == 0 || !jointIds.contains(weight.jointId) || weight.weight < 0.0f) {
+                return false;
+            }
+            weightSum += weight.weight;
+        }
+
+        if (std::abs(weightSum - 1.0f) > 0.001f) {
+            return false;
+        }
+
+        normalizedWeights.append(normalizedWeightsForVertex);
+    }
+
+    object->setHasSkinBinding(true);
+    object->setSkinBindLocalTransform(object->localTransform());
+    object->setSkinJointIds(jointIds);
+    object->setSkinWeights(normalizedWeights);
+    return true;
+}
+
+bool Scene::clearObjectSkinBinding(SceneObject::Id id)
+{
+    SceneObject* object = findObject(id);
+    if (object == nullptr) {
+        return false;
+    }
+
+    object->clearSkinBinding();
+    return true;
+}
+
+bool Scene::buildDeformedMesh(SceneObject::Id objectId, int meshHandle, MeshData* deformedMesh) const
+{
+    if (deformedMesh == nullptr) {
+        return false;
+    }
+
+    const SceneObject* object = findObject(objectId);
+    const MeshData* mesh = findMesh(meshHandle);
+    if (object == nullptr || mesh == nullptr) {
+        return false;
+    }
+
+    *deformedMesh = *mesh;
+    if (!object->hasSkinBinding()) {
+        return true;
+    }
+
+    int vertexOffset = 0;
+    bool foundHandle = false;
+    for (int objectMeshHandle : object->meshHandles()) {
+        const MeshData* objectMesh = findMesh(objectMeshHandle);
+        if (objectMesh == nullptr) {
+            return false;
+        }
+
+        if (objectMeshHandle == meshHandle) {
+            foundHandle = true;
+            break;
+        }
+
+        vertexOffset += objectMesh->positions.size();
+    }
+
+    if (!foundHandle || object->skinWeights().size() < vertexOffset + mesh->positions.size()) {
+        return false;
+    }
+
+    const QMatrix4x4 objectBindWorld = bindPoseWorldTransform(objectId);
+    const QMatrix3x3 objectBindNormal = objectBindWorld.normalMatrix();
+    deformedMesh->positions.resize(mesh->positions.size());
+    deformedMesh->normals.resize(mesh->normals.size());
+
+    for (int vertexIndex = 0; vertexIndex < mesh->positions.size(); ++vertexIndex) {
+        const VertexSkinWeights& vertexWeights = object->skinWeights().at(vertexOffset + vertexIndex);
+        QVector3D skinnedPosition;
+        QVector3D skinnedNormal;
+
+        const QVector3D bindPosition = objectBindWorld * mesh->positions.at(vertexIndex);
+        const QVector3D sourceNormal = vertexIndex < mesh->normals.size()
+            ? mesh->normals.at(vertexIndex)
+            : QVector3D(0.0f, 1.0f, 0.0f);
+        const QVector3D bindNormal = QVector3D(
+            objectBindNormal(0, 0) * sourceNormal.x() + objectBindNormal(0, 1) * sourceNormal.y() + objectBindNormal(0, 2) * sourceNormal.z(),
+            objectBindNormal(1, 0) * sourceNormal.x() + objectBindNormal(1, 1) * sourceNormal.y() + objectBindNormal(1, 2) * sourceNormal.z(),
+            objectBindNormal(2, 0) * sourceNormal.x() + objectBindNormal(2, 1) * sourceNormal.y() + objectBindNormal(2, 2) * sourceNormal.z()).normalized();
+
+        for (const SkinWeight& weight : vertexWeights) {
+            const QMatrix4x4 jointWorld = worldTransform(weight.jointId);
+            const QMatrix4x4 inverseBindJointWorld = bindPoseWorldTransform(weight.jointId).inverted();
+            const QMatrix4x4 skinMatrix = jointWorld * inverseBindJointWorld;
+            skinnedPosition += (skinMatrix * bindPosition) * weight.weight;
+            skinnedNormal += skinMatrix.mapVector(bindNormal) * weight.weight;
+        }
+
+        deformedMesh->positions[vertexIndex] = skinnedPosition;
+        if (vertexIndex < deformedMesh->normals.size()) {
+            deformedMesh->normals[vertexIndex] = skinnedNormal.normalized();
+        }
+    }
+
+    deformedMesh->bounds.reset();
+    for (const QVector3D& position : deformedMesh->positions) {
+        deformedMesh->bounds.expandToInclude(position);
     }
 
     return true;
@@ -442,6 +735,10 @@ SceneObject::Id Scene::duplicateSubtreeRecursive(const Scene& sourceScene, Scene
     targetObject->setJointOrientation(sourceObject->jointOrientation());
     targetObject->setBindPoseLocalTransform(sourceObject->bindPoseLocalTransform());
     targetObject->setHasBindPose(sourceObject->hasBindPose());
+    targetObject->setHasSkinBinding(sourceObject->hasSkinBinding());
+    targetObject->setSkinBindLocalTransform(sourceObject->skinBindLocalTransform());
+    targetObject->setSkinJointIds(sourceObject->skinJointIds());
+    targetObject->setSkinWeights(sourceObject->skinWeights());
     targetObject->setTransformKeyframes(sourceObject->transformKeyframes());
     targetObject->setLocalBounds(sourceObject->localBounds());
     targetObject->setWorldBounds(sourceObject->worldBounds());
@@ -513,6 +810,10 @@ void Scene::appendScene(const Scene& other)
         targetObject->setJointOrientation(sourceObject->jointOrientation());
         targetObject->setBindPoseLocalTransform(sourceObject->bindPoseLocalTransform());
         targetObject->setHasBindPose(sourceObject->hasBindPose());
+        targetObject->setHasSkinBinding(sourceObject->hasSkinBinding());
+        targetObject->setSkinBindLocalTransform(sourceObject->skinBindLocalTransform());
+        targetObject->setSkinJointIds(sourceObject->skinJointIds());
+        targetObject->setSkinWeights(sourceObject->skinWeights());
         targetObject->setTransformKeyframes(sourceObject->transformKeyframes());
         targetObject->setLocalBounds(sourceObject->localBounds());
         targetObject->setWorldBounds(sourceObject->worldBounds());
@@ -543,6 +844,24 @@ void Scene::appendScene(const Scene& other)
 
         const SceneObject::Id oldParentId = sourceObject->parentId();
         targetObject->setParentId(oldParentId == 0 ? 0 : objectIdMap.value(oldParentId, 0));
+
+        QVector<SceneObject::Id> remappedSkinJointIds;
+        remappedSkinJointIds.reserve(sourceObject->skinJointIds().size());
+        for (SceneObject::Id jointId : sourceObject->skinJointIds()) {
+            const SceneObject::Id remappedJointId = objectIdMap.value(jointId, 0);
+            if (remappedJointId != 0) {
+                remappedSkinJointIds.append(remappedJointId);
+            }
+        }
+        targetObject->setSkinJointIds(remappedSkinJointIds);
+
+        SkinWeightTable remappedSkinWeights = sourceObject->skinWeights();
+        for (VertexSkinWeights& vertexWeights : remappedSkinWeights) {
+            for (SkinWeight& weight : vertexWeights) {
+                weight.jointId = objectIdMap.value(weight.jointId, 0);
+            }
+        }
+        targetObject->setSkinWeights(remappedSkinWeights);
 
         for (SceneObject::Id childId : sourceObject->childIds()) {
             const SceneObject::Id mappedChildId = objectIdMap.value(childId, 0);
@@ -584,6 +903,45 @@ QMatrix4x4 Scene::worldTransform(SceneObject::Id id) const
         if (const SceneObject* chainObject = findObject(*it)) {
             worldMatrix *= SceneMath::composeMatrix(composeObjectLocalTransform(*chainObject, chainObject->localTransform()));
         }
+    }
+
+    return worldMatrix;
+}
+
+QMatrix4x4 Scene::bindPoseWorldTransform(SceneObject::Id id) const
+{
+    const SceneObject* object = findObject(id);
+    if (object == nullptr) {
+        return QMatrix4x4();
+    }
+
+    QVector<SceneObject::Id> chain;
+    chain.reserve(16);
+
+    const SceneObject* current = object;
+    while (current != nullptr) {
+        chain.append(current->id());
+        current = current->parentId() == 0 ? nullptr : findObject(current->parentId());
+    }
+
+    QMatrix4x4 worldMatrix;
+    for (auto it = chain.crbegin(); it != chain.crend(); ++it) {
+        const SceneObject* chainObject = findObject(*it);
+        if (chainObject == nullptr) {
+            continue;
+        }
+
+        Transform bindTransform = chainObject->localTransform();
+        if (chainObject->isJoint() && chainObject->hasBindPose()) {
+            bindTransform = chainObject->bindPoseLocalTransform();
+            bindTransform.rotation = chainObject->jointOrientation() * bindTransform.rotation;
+        } else if (chainObject->hasSkinBinding()) {
+            bindTransform = chainObject->skinBindLocalTransform();
+        } else {
+            bindTransform = composeObjectLocalTransform(*chainObject, chainObject->localTransform());
+        }
+
+        worldMatrix *= SceneMath::composeMatrix(bindTransform);
     }
 
     return worldMatrix;
@@ -666,6 +1024,27 @@ Transform Scene::evaluateObjectTransformAtFrame(const SceneObject& object, int f
     }
 
     return object.authoredTransform();
+}
+
+QVector<SceneObject::Id> Scene::collectJointSubtree(SceneObject::Id rootJointId) const
+{
+    QVector<SceneObject::Id> joints;
+    const SceneObject* rootJoint = findObject(rootJointId);
+    if (rootJoint == nullptr || !rootJoint->isJoint()) {
+        return joints;
+    }
+
+    joints.append(rootJointId);
+    for (SceneObject::Id childId : rootJoint->childIds()) {
+        const SceneObject* child = findObject(childId);
+        if (child == nullptr || !child->isJoint()) {
+            continue;
+        }
+
+        joints += collectJointSubtree(childId);
+    }
+
+    return joints;
 }
 
 Transform Scene::composeObjectLocalTransform(const SceneObject& object, const Transform& baseTransform) const

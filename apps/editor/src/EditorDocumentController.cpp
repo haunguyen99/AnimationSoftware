@@ -94,4 +94,20 @@ OperationResult exportSelection(const Scene& scene, SceneObject::Id objectId, co
     const Scene exportScene = buildExportSceneForObject(scene, objectId);
     return saveScene(exportScene, filePath);
 }
+
+void bindScriptCommands(ScriptCommandContext& context, const ScriptBindings& bindings)
+{
+    context.newScene = [bindings]() {
+        bindings.newScene();
+    };
+    context.openSceneFile = [bindings](const QString& filePath) {
+        return bindings.openSceneFile(filePath);
+    };
+    context.importSceneFile = [bindings](const QString& filePath) {
+        return bindings.importSceneFile(filePath);
+    };
+    context.saveSceneFile = [bindings](const QString& filePath) {
+        return bindings.saveSceneFile(filePath);
+    };
+}
 }

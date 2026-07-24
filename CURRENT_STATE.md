@@ -20,10 +20,10 @@ Moi khi co thay doi lon, phai cap nhat file nay.
 
 Scope dang tap trung truoc mat:
 
-* `v0.4`
-* `rigging foundation`
-* skeleton hierarchy authoring
-* parenting va joint orientation co ban
+* `v0.6`
+* `animation tools`
+* key editing workflow
+* timing / pose editing depth
 
 ---
 
@@ -38,6 +38,8 @@ Tai lieu scope hien dung:
 * [Project_Phoenix_V0_2_Editor_Shell_Scope.md](</E:/Animation Software/Project_Phoenix_V0_2_Editor_Shell_Scope.md>)
 * [Project_Phoenix_V0_2_Editor_Shell_Checklist.md](</E:/Animation Software/Project_Phoenix_V0_2_Editor_Shell_Checklist.md>)
 * [docs/Beta_Manual_QA.md](</E:/Animation Software/docs/Beta_Manual_QA.md>)
+* [docs/Animation_Tools_V0_6_Roadmap.md](</E:/Animation Software/docs/Animation_Tools_V0_6_Roadmap.md>)
+* [docs/Animation_Tools_V0_6_Implementation_Plan.md](</E:/Animation Software/docs/Animation_Tools_V0_6_Implementation_Plan.md>)
 
 Scope active hien tai:
 
@@ -53,11 +55,17 @@ Scope active hien tai:
 * da co `joint` / skeleton authoring foundation
 * da co parenting / unparenting / hierarchy drag trong `Outliner`
 * da co `joint orientation` basics va `bind pose` capture workflow
+* da co `skin binding` foundation
+* da co mesh deformation runtime trong viewport
+* da co weight normalization core
+* da co `duplicate / shift / previous-next key` foundation
 
 Quy trinh feature chinh thuc:
 
 * [FEATURE_WORKFLOW.md](</E:/Animation Software/FEATURE_WORKFLOW.md>)
-* `v0.4` da qua `design -> implementation plan -> implementation phase 1`
+* `v0.4` da qua `design -> implementation -> manual QA`
+* `v0.6` da co roadmap, phase 1 uu tien `key editing core`
+* `v0.6 phase 1` da vao implementation
 
 ---
 
@@ -139,10 +147,12 @@ Da co:
 
 Chua co:
 
-* skin bind / weight workflow
-* mesh deformation evaluation
 * orientation presets nang cao
 * dedicated rig panel ngoai `Channel Box`
+* weight editing UX
+* dope sheet / graph editor tooling
+* timeline range selection foundation
+* manual QA cho `v0.6 phase 1`
 
 Da xong end-to-end:
 
@@ -187,7 +197,28 @@ Da xong end-to-end:
   * viewport skeleton visualization
   * `joint`, `parent`, `unparent`, `jointOrient`, `bindPose` command paths
   * `Channel Box` workflow cho orientation va bind pose capture
+* manual QA theo [docs/Rigging_Foundation_V0_4_Manual_QA.md](</E:/Animation Software/docs/Rigging_Foundation_V0_4_Manual_QA.md>) da pass
+* `Skinning Foundation v0.5` core pass:
+  * skin data model
+  * bind rule `mesh -> skeleton`
+  * save/load skinning data
+  * viewport deformation runtime
+  * bind command + menu workflow
+  * weight normalization
+* manual QA runtime:
+  * bind/deform trong app da duoc user xac nhan `deform ok`
+* `v0.5 Skinning` co the khoa:
+  * build pass
+  * `ctest` pass
+  * runtime QA pass
 * `ctest` trong `build/ninja-msvc-debug` pass `2/2`
+* `v0.6 Animation Tools phase 1` foundation pass:
+  * `duplicate key`
+  * `shift key track`
+  * `previous/next key jump`
+  * `copyKey` / `shiftKey` command paths
+  * menu + timeline controls
+  * `ctest` pass
 
 ---
 
@@ -216,12 +247,9 @@ Da xac nhan:
 
 Uu tien gan nhat:
 
-1. manual QA them cho `v0.4 phase 1` trong app
-2. quyet scope `v0.4 phase 2` neu co:
-   * object -> joint socket workflow
-   * orientation preset / up-axis policy ro hon
-   * inspector polish cho rig authoring
-3. chuan bi design cho `v0.5 Skinning`
+1. implement `v0.6 Phase 1 - Key Editing Core`
+2. manual QA app cho `duplicate / shift / previous-next key`
+3. quyet co mo `Task 4 - Timeline Range Foundation` ngay hay khong
 
 ---
 

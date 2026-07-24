@@ -1,6 +1,7 @@
 #include "scene/SceneObject.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace
 {
@@ -131,6 +132,54 @@ void SceneObject::setHasBindPose(bool hasBindPose)
     hasBindPose_ = hasBindPose;
 }
 
+bool SceneObject::hasSkinBinding() const
+{
+    return hasSkinBinding_;
+}
+
+void SceneObject::setHasSkinBinding(bool hasSkinBinding)
+{
+    hasSkinBinding_ = hasSkinBinding;
+}
+
+const Transform& SceneObject::skinBindLocalTransform() const
+{
+    return skinBindLocalTransform_;
+}
+
+void SceneObject::setSkinBindLocalTransform(const Transform& transform)
+{
+    skinBindLocalTransform_ = transform;
+}
+
+const QVector<SceneObject::Id>& SceneObject::skinJointIds() const
+{
+    return skinJointIds_;
+}
+
+void SceneObject::setSkinJointIds(const QVector<Id>& jointIds)
+{
+    skinJointIds_ = jointIds;
+}
+
+const SkinWeightTable& SceneObject::skinWeights() const
+{
+    return skinWeights_;
+}
+
+void SceneObject::setSkinWeights(const SkinWeightTable& weights)
+{
+    skinWeights_ = weights;
+}
+
+void SceneObject::clearSkinBinding()
+{
+    hasSkinBinding_ = false;
+    skinBindLocalTransform_ = Transform();
+    skinJointIds_.clear();
+    skinWeights_.clear();
+}
+
 bool SceneObject::hasAnimation() const
 {
     return !transformKeyframes_.isEmpty();
@@ -180,6 +229,69 @@ bool SceneObject::removeTransformKeyframe(int frame)
 
     transformKeyframes_.erase(it);
     return true;
+}
+
+bool SceneObject::duplicateTransformKeyframe(int sourceFrame, int targetFrame)
+{
+    const auto it = std::find_if(transformKeyframes_.cbegin(), transformKeyframes_.cend(), [sourceFrame](const TransformKeyframe& keyframe) {
+        return keyframe.frame == sourceFrame;
+    });
+    if (it == transformKeyframes_.cend()) {
+        return false;
+    }
+
+    setTransformKeyframe(targetFrame, it->transform);
+    return true;
+}
+
+bool SceneObject::offsetAllTransformKeyframes(int frameDelta)
+{
+    if (transformKeyframes_.isEmpty() || frameDelta == 0) {
+        return !transformKeyframes_.isEmpty();
+    }
+
+    for (TransformKeyframe& keyframe : transformKeyframes_) {
+        keyframe.frame += frameDelta;
+    }
+
+    std::sort(transformKeyframes_.begin(), transformKeyframes_.end(), keyframeLessThan);
+
+    TransformKeyframeTrack mergedKeyframes;
+    mergedKeyframes.reserve(transformKeyframes_.size());
+    for (const TransformKeyframe& keyframe : transformKeyframes_) {
+        if (!mergedKeyframes.isEmpty() && mergedKeyframes.last().frame == keyframe.frame) {
+            mergedKeyframes.last().transform = keyframe.transform;
+        } else {
+            mergedKeyframes.append(keyframe);
+        }
+    }
+
+    transformKeyframes_ = mergedKeyframes;
+    return true;
+}
+
+int SceneObject::nextTransformKeyframeAfter(int frame) const
+{
+    int bestFrame = std::numeric_limits<int>::max();
+    for (const TransformKeyframe& keyframe : transformKeyframes_) {
+        if (keyframe.frame > frame && keyframe.frame < bestFrame) {
+            bestFrame = keyframe.frame;
+        }
+    }
+
+    return bestFrame == std::numeric_limits<int>::max() ? frame : bestFrame;
+}
+
+int SceneObject::previousTransformKeyframeBefore(int frame) const
+{
+    int bestFrame = std::numeric_limits<int>::min();
+    for (const TransformKeyframe& keyframe : transformKeyframes_) {
+        if (keyframe.frame < frame && keyframe.frame > bestFrame) {
+            bestFrame = keyframe.frame;
+        }
+    }
+
+    return bestFrame == std::numeric_limits<int>::min() ? frame : bestFrame;
 }
 
 const Bounds3D& SceneObject::localBounds() const

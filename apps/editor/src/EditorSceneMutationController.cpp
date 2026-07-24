@@ -111,29 +111,6 @@ MutationResult bindSkin(const Scene& scene, SceneObject::Id meshId, SceneObject:
 
 void bindScriptCommands(ScriptCommandContext& context, const ScriptBindings& bindings)
 {
-    context.createPrimitive = [bindings](PrimitiveMeshFactory::Type type) {
-        const QString objectName = bindings.generateUniqueScriptName(bindings.primitiveScriptPrefix(type));
-        const SceneObject::Id objectId = bindings.createPrimitive(type, objectName);
-        if (objectId == 0) {
-            return QString();
-        }
-
-        bindings.applyLiveMutation(objectId, false);
-        return objectName;
-    };
-    context.createJoint = [bindings](const QString& requestedName) {
-        const QString objectName = bindings.generateUniqueObjectName(
-            requestedName.trimmed().isEmpty() ? QString("joint") : requestedName.trimmed(),
-            0);
-        const SceneObject::Id parentId = bindings.selectedObjectId();
-        const SceneObject::Id objectId = bindings.createJoint(objectName, parentId);
-        if (objectId == 0) {
-            return QString();
-        }
-
-        bindings.applyLiveMutation(objectId, false);
-        return objectName;
-    };
     context.renameObject = [bindings](const QString& sourceName, const QString& newName) {
         const SceneObject::Id objectId = bindings.findObjectIdByName(sourceName);
         if (objectId == 0 || newName.trimmed().isEmpty()) {
@@ -242,6 +219,123 @@ void bindScriptCommands(ScriptCommandContext& context, const ScriptBindings& bin
         }
 
         bindings.applySceneMutation(mutation.scene, meshId, false);
+        return true;
+    };
+    context.setJointOrientation = [bindings](const QString& objectName, const QVector3D& eulerDegrees) {
+        const SceneObject::Id objectId = bindings.findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        if (!bindings.setJointOrientation(objectId, QQuaternion::fromEulerAngles(eulerDegrees))) {
+            return false;
+        }
+
+        bindings.applyLiveMutation(objectId, false);
+        return true;
+    };
+    context.resetJointOrientation = [bindings](const QString& objectName) {
+        const SceneObject::Id objectId = bindings.findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        if (!bindings.resetJointOrientation(objectId)) {
+            return false;
+        }
+
+        bindings.applyLiveMutation(objectId, false);
+        return true;
+    };
+    context.alignJointOrientationToChild = [bindings](const QString& objectName) {
+        const SceneObject::Id objectId = bindings.findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        if (!bindings.alignJointOrientationToChild(objectId)) {
+            return false;
+        }
+
+        bindings.applyLiveMutation(objectId, false);
+        return true;
+    };
+    context.captureBindPose = [bindings](const QString& objectName, bool recursive) {
+        const SceneObject::Id objectId = bindings.findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        if (!bindings.captureBindPose(objectId, recursive)) {
+            return false;
+        }
+
+        bindings.applyLiveMutation(objectId, false);
+        return true;
+    };
+    context.setAttribute = [bindings](const QString& objectName, const QString& attributeName, const QList<double>& values) {
+        const SceneObject::Id objectId = bindings.findObjectIdByName(objectName);
+        if (objectId == 0) {
+            return false;
+        }
+
+        const SceneObject* object = bindings.findObject(objectId);
+        if (object == nullptr) {
+            return false;
+        }
+
+        if (attributeName == "visibility") {
+            if (values.size() != 1) {
+                return false;
+            }
+
+            if (!bindings.setObjectVisibility(objectId, values.first() != 0.0)) {
+                return false;
+            }
+
+            bindings.applyLiveMutation(objectId, false);
+            return true;
+        }
+
+        if (values.size() != 3) {
+            return false;
+        }
+
+        if (attributeName == "jointOrient") {
+            if (!bindings.setJointOrientation(
+                    objectId,
+                    QQuaternion::fromEulerAngles(
+                        static_cast<float>(values.at(0)),
+                        static_cast<float>(values.at(1)),
+                        static_cast<float>(values.at(2))))) {
+                return false;
+            }
+
+            bindings.applyLiveMutation(objectId, false);
+            return true;
+        }
+
+        Transform transform = object->localTransform();
+        const QVector3D vectorValue(
+            static_cast<float>(values.at(0)),
+            static_cast<float>(values.at(1)),
+            static_cast<float>(values.at(2)));
+
+        if (attributeName == "translate") {
+            transform.translation = vectorValue;
+        } else if (attributeName == "rotate") {
+            transform.rotation = QQuaternion::fromEulerAngles(vectorValue);
+        } else if (attributeName == "scale") {
+            transform.scale = vectorValue;
+        } else {
+            return false;
+        }
+
+        if (!bindings.setObjectLocalTransform(objectId, transform)) {
+            return false;
+        }
+
+        bindings.applyLiveMutation(objectId, false);
         return true;
     };
 }

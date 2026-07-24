@@ -5,7 +5,6 @@
 #include <functional>
 
 #include "ScriptCommandSystem.h"
-#include "scene/PrimitiveMeshFactory.h"
 #include "scene/Scene.h"
 
 namespace EditorSceneMutationController
@@ -21,13 +20,14 @@ struct ScriptBindings
 {
     std::function<SceneObject::Id(const QString&)> findObjectIdByName;
     std::function<QString(const QString&, SceneObject::Id)> generateUniqueObjectName;
-    std::function<QString(const QString&)> generateUniqueScriptName;
-    std::function<QString(PrimitiveMeshFactory::Type)> primitiveScriptPrefix;
-    std::function<SceneObject::Id()> selectedObjectId;
     std::function<const SceneObject*(SceneObject::Id)> findObject;
     std::function<Scene()> sceneSnapshot;
-    std::function<SceneObject::Id(PrimitiveMeshFactory::Type, const QString&)> createPrimitive;
-    std::function<SceneObject::Id(const QString&, SceneObject::Id)> createJoint;
+    std::function<bool(SceneObject::Id, bool)> setObjectVisibility;
+    std::function<bool(SceneObject::Id, const Transform&)> setObjectLocalTransform;
+    std::function<bool(SceneObject::Id, const QQuaternion&)> setJointOrientation;
+    std::function<bool(SceneObject::Id)> resetJointOrientation;
+    std::function<bool(SceneObject::Id)> alignJointOrientationToChild;
+    std::function<bool(SceneObject::Id, bool)> captureBindPose;
     std::function<void(const Scene&, SceneObject::Id, bool)> applySceneMutation;
     std::function<void(SceneObject::Id, bool)> applyLiveMutation;
 };

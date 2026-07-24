@@ -150,6 +150,61 @@ TransformKeyframeTrack keyframesFromJson(const QJsonArray& array)
 
     return keyframes;
 }
+
+QJsonArray skinJointIdsToJson(const QVector<SceneObject::Id>& jointIds)
+{
+    QJsonArray array;
+    for (SceneObject::Id jointId : jointIds) {
+        array.append(static_cast<qint64>(jointId));
+    }
+    return array;
+}
+
+QVector<SceneObject::Id> skinJointIdsFromJson(const QJsonArray& array)
+{
+    QVector<SceneObject::Id> jointIds;
+    jointIds.reserve(array.size());
+    for (const QJsonValue& value : array) {
+        jointIds.append(static_cast<SceneObject::Id>(value.toInteger()));
+    }
+    return jointIds;
+}
+
+QJsonArray skinWeightsToJson(const SkinWeightTable& table)
+{
+    QJsonArray vertices;
+    for (const VertexSkinWeights& vertexWeights : table) {
+        QJsonArray weights;
+        for (const SkinWeight& weight : vertexWeights) {
+            QJsonObject weightObject;
+            weightObject.insert("jointId", static_cast<qint64>(weight.jointId));
+            weightObject.insert("weight", weight.weight);
+            weights.append(weightObject);
+        }
+        vertices.append(weights);
+    }
+    return vertices;
+}
+
+SkinWeightTable skinWeightsFromJson(const QJsonArray& array)
+{
+    SkinWeightTable table;
+    table.reserve(array.size());
+    for (const QJsonValue& vertexValue : array) {
+        VertexSkinWeights vertexWeights;
+        const QJsonArray weights = vertexValue.toArray();
+        vertexWeights.reserve(weights.size());
+        for (const QJsonValue& weightValue : weights) {
+            const QJsonObject weightObject = weightValue.toObject();
+            SkinWeight weight;
+            weight.jointId = static_cast<SceneObject::Id>(weightObject.value("jointId").toInteger());
+            weight.weight = static_cast<float>(weightObject.value("weight").toDouble());
+            vertexWeights.append(weight);
+        }
+        table.append(vertexWeights);
+    }
+    return table;
+}
 }
 
 namespace PhoenixSceneDocument
@@ -158,7 +213,7 @@ bool saveToFile(const Scene& scene, const QString& filePath, QString* errorMessa
 {
     QJsonObject root;
     root.insert("format", "phoenix-scene");
-    root.insert("version", 3);
+    root.insert("version", 5);
 
     QJsonArray meshes;
     const QVector<int> meshHandles = scene.allMeshHandles();
@@ -199,6 +254,10 @@ bool saveToFile(const Scene& scene, const QString& filePath, QString* errorMessa
         });
         objectJson.insert("hasBindPose", object->hasBindPose());
         objectJson.insert("bindPoseLocalTransform", transformToJson(object->bindPoseLocalTransform()));
+        objectJson.insert("hasSkinBinding", object->hasSkinBinding());
+        objectJson.insert("skinBindLocalTransform", transformToJson(object->skinBindLocalTransform()));
+        objectJson.insert("skinJointIds", skinJointIdsToJson(object->skinJointIds()));
+        objectJson.insert("skinWeights", skinWeightsToJson(object->skinWeights()));
         objectJson.insert("transformKeyframes", keyframesToJson(object->transformKeyframes()));
         objectJson.insert("localBoundsMin", vector3ToJson(object->localBounds().min()));
         objectJson.insert("localBoundsMax", vector3ToJson(object->localBounds().max()));
@@ -308,6 +367,18 @@ LoadResult loadFromFile(const QString& filePath)
         } else if (object->isJoint()) {
             object->setHasBindPose(true);
             object->setBindPoseLocalTransform(localTransform);
+        }
+        if (version >= 4) {
+            object->setHasSkinBinding(objectJson.value("hasSkinBinding").toBool(false));
+            if (version >= 5) {
+                object->setSkinBindLocalTransform(transformFromJson(objectJson.value("skinBindLocalTransform").toObject()));
+            } else {
+                object->setSkinBindLocalTransform(localTransform);
+            }
+            object->setSkinJointIds(skinJointIdsFromJson(objectJson.value("skinJointIds").toArray()));
+            object->setSkinWeights(skinWeightsFromJson(objectJson.value("skinWeights").toArray()));
+        } else {
+            object->clearSkinBinding();
         }
         object->setTransformKeyframes(keyframesFromJson(objectJson.value("transformKeyframes").toArray()));
         object->setLocalBounds(Bounds3D::fromMinMax(

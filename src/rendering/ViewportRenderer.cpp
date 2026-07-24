@@ -8,6 +8,7 @@
 
 #include <QDebug>
 #include <QMatrix4x4>
+#include <QOpenGLContext>
 #include <QOpenGLShaderProgram>
 
 namespace
@@ -35,9 +36,17 @@ QString vertexShaderSource()
             vColor = inColor;
 
             vec3 normal = normalize(mat3(uView) * inNormal);
-            vec3 lightDir = vec3(0.0, 0.0, 1.0);
-            float diffuse = max(dot(normal, lightDir), 0.0);
-            vLighting = uUseLighting ? (0.25 + diffuse * 0.75) : 1.0;
+            // Editor viewports prioritize readability over physically-correct
+            // shading, especially in front/side/top orthographic views.
+            vec3 keyLightDir = normalize(vec3(0.0, 0.0, 1.0));
+            vec3 fillLightDir = normalize(vec3(0.45, 0.25, 0.85));
+
+            float key = abs(dot(normal, keyLightDir));
+            float fill = abs(dot(normal, fillLightDir));
+            float wrapped = key * 0.72 + fill * 0.28;
+
+            float viewportLighting = 0.46 + wrapped * 0.54;
+            vLighting = uUseLighting ? clamp(viewportLighting, 0.0, 1.0) : 1.0;
 
             gl_Position = uMvp * vec4(inPosition, 1.0);
         }
@@ -196,6 +205,40 @@ ViewportRenderer::ViewportRenderer()
 
 ViewportRenderer::~ViewportRenderer()
 {
+    if (QOpenGLContext::currentContext() == nullptr) {
+        qCWarning(logViewport) << "renderer teardown skipped GL buffer destroy because no current context";
+        return;
+    }
+
+    destroyGlResources();
+}
+
+void ViewportRenderer::destroyGlResources()
+{
+    if (shaderProgram_) {
+        shaderProgram_.reset();
+    }
+
+    if (vao_.isCreated()) {
+        vao_.destroy();
+    }
+
+    if (importedVao_.isCreated()) {
+        importedVao_.destroy();
+    }
+
+    if (jointVao_.isCreated()) {
+        jointVao_.destroy();
+    }
+
+    if (selectionVao_.isCreated()) {
+        selectionVao_.destroy();
+    }
+
+    if (gizmoVao_.isCreated()) {
+        gizmoVao_.destroy();
+    }
+
     if (vertexBuffer_.isCreated()) {
         vertexBuffer_.destroy();
     }
@@ -228,6 +271,15 @@ bool ViewportRenderer::initialize(QOpenGLFunctions_3_3_Core* functions)
         qCWarning(logViewport) << "OpenGL functions pointer is null.";
         return false;
     }
+
+    destroyGlResources();
+    gridVertices_.clear();
+    axisVertices_.clear();
+    importedVertices_.clear();
+    importedIndices_.clear();
+    jointVertices_.clear();
+    selectionVertices_.clear();
+    gizmoVertices_.clear();
 
     shaderProgram_ = ShaderUtils::buildProgram(vertexShaderSource(), fragmentShaderSource());
     if (shaderProgram_ == nullptr) {
@@ -339,6 +391,9 @@ void ViewportRenderer::render(const EditorCamera& camera, const ViewportRenderOp
     }
 
     functions_->glViewport(0, 0, viewportWidth_, viewportHeight_);
+    functions_->glEnable(GL_DEPTH_TEST);
+    functions_->glDepthFunc(GL_LEQUAL);
+    functions_->glDepthMask(GL_TRUE);
     functions_->glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
     if (options.backfaceCulling) {
@@ -385,16 +440,15 @@ void ViewportRenderer::render(const EditorCamera& camera, const ViewportRenderOp
         importedVao_.release();
     }
 
-    if (!selectionVertices_.isEmpty()) {
+    if (options.showSelectionOutline && !selectionVertices_.isEmpty()) {
         shaderProgram_->setUniformValue("uMvp", meshMvp);
         shaderProgram_->setUniformValue("uUseLighting", false);
         selectionVao_.bind();
         functions_->glDisable(GL_CULL_FACE);
-        functions_->glDisable(GL_DEPTH_TEST);
-        functions_->glDepthMask(GL_FALSE);
-        functions_->glLineWidth(2.0f);
-        functions_->glDrawArrays(GL_LINES, 0, selectionVertices_.size());
         functions_->glEnable(GL_DEPTH_TEST);
+        functions_->glDepthMask(GL_FALSE);
+        functions_->glLineWidth(1.0f);
+        functions_->glDrawArrays(GL_LINES, 0, selectionVertices_.size());
         selectionVao_.release();
     }
 
@@ -405,7 +459,7 @@ void ViewportRenderer::render(const EditorCamera& camera, const ViewportRenderOp
         functions_->glDisable(GL_CULL_FACE);
         functions_->glDisable(GL_DEPTH_TEST);
         functions_->glDepthMask(GL_FALSE);
-        functions_->glLineWidth(2.5f);
+        functions_->glLineWidth(1.0f);
         functions_->glDrawArrays(GL_LINES, 0, jointVertices_.size());
         functions_->glEnable(GL_DEPTH_TEST);
         jointVao_.release();
@@ -418,7 +472,7 @@ void ViewportRenderer::render(const EditorCamera& camera, const ViewportRenderOp
         functions_->glDisable(GL_CULL_FACE);
         functions_->glEnable(GL_DEPTH_TEST);
         functions_->glDepthMask(GL_FALSE);
-        functions_->glLineWidth(3.0f);
+        functions_->glLineWidth(1.0f);
         functions_->glDrawArrays(GL_LINES, 0, gizmoVertices_.size());
         gizmoVao_.release();
     }
@@ -426,6 +480,7 @@ void ViewportRenderer::render(const EditorCamera& camera, const ViewportRenderOp
     vao_.bind();
     shaderProgram_->setUniformValue("uMvp", gridMvp);
     shaderProgram_->setUniformValue("uUseLighting", false);
+    functions_->glEnable(GL_DEPTH_TEST);
     functions_->glDepthMask(GL_FALSE);
     functions_->glLineWidth(1.0f);
     functions_->glDrawArrays(GL_LINES, 0, gridVertices_.size());
@@ -491,7 +546,7 @@ void ViewportRenderer::uploadGeometry()
 void ViewportRenderer::syncScene(const Scene& scene)
 {
     Q_ASSERT(functions_ != nullptr);
-    if (functions_ == nullptr) {
+    if (functions_ == nullptr || !importedVertexBuffer_.isCreated() || !importedIndexBuffer_.isCreated()) {
         return;
     }
 
@@ -599,40 +654,48 @@ void ViewportRenderer::uploadImportedMesh(const Scene& scene)
         }
 
         for (int meshHandle : object->meshHandles()) {
+            MeshData deformedMesh;
             const MeshData* mesh = scene.findMesh(meshHandle);
             if (mesh == nullptr) {
                 Q_ASSERT_X(false, "ViewportRenderer::uploadImportedMesh", "SceneObject references missing mesh handle.");
                 continue;
             }
 
-            Q_ASSERT(mesh->positions.size() == mesh->normals.size());
-            Q_ASSERT(mesh->positions.size() == mesh->colors.size());
-            Q_ASSERT((mesh->indices.size() % 3) == 0);
+            const bool useDeformedMesh = object->hasSkinBinding() && scene.buildDeformedMesh(objectId, meshHandle, &deformedMesh);
+            const MeshData& renderMesh = useDeformedMesh ? deformedMesh : *mesh;
+
+            Q_ASSERT(renderMesh.positions.size() == renderMesh.normals.size());
+            Q_ASSERT(renderMesh.positions.size() == renderMesh.colors.size());
+            Q_ASSERT((renderMesh.indices.size() % 3) == 0);
 
             const QMatrix4x4 worldMatrix = scene.worldTransform(objectId);
             const QMatrix3x3 normalMatrix = worldMatrix.normalMatrix();
-            const int vertexCount = mesh->positions.size();
+            const int vertexCount = renderMesh.positions.size();
             for (int vertexIndex = 0; vertexIndex < vertexCount; ++vertexIndex) {
-                const QVector3D position = worldMatrix * mesh->positions[vertexIndex];
-                const QVector3D sourceNormal = vertexIndex < mesh->normals.size()
-                    ? mesh->normals[vertexIndex]
+                const QVector3D position = useDeformedMesh
+                    ? renderMesh.positions[vertexIndex]
+                    : worldMatrix * renderMesh.positions[vertexIndex];
+                const QVector3D sourceNormal = vertexIndex < renderMesh.normals.size()
+                    ? renderMesh.normals[vertexIndex]
                     : QVector3D(0.0f, 1.0f, 0.0f);
-                const QVector3D normal = QVector3D(
-                    normalMatrix(0, 0) * sourceNormal.x() + normalMatrix(0, 1) * sourceNormal.y() + normalMatrix(0, 2) * sourceNormal.z(),
-                    normalMatrix(1, 0) * sourceNormal.x() + normalMatrix(1, 1) * sourceNormal.y() + normalMatrix(1, 2) * sourceNormal.z(),
-                    normalMatrix(2, 0) * sourceNormal.x() + normalMatrix(2, 1) * sourceNormal.y() + normalMatrix(2, 2) * sourceNormal.z()).normalized();
-                const QVector3D color = vertexIndex < mesh->colors.size()
-                    ? mesh->colors[vertexIndex]
+                const QVector3D normal = useDeformedMesh
+                    ? sourceNormal.normalized()
+                    : QVector3D(
+                        normalMatrix(0, 0) * sourceNormal.x() + normalMatrix(0, 1) * sourceNormal.y() + normalMatrix(0, 2) * sourceNormal.z(),
+                        normalMatrix(1, 0) * sourceNormal.x() + normalMatrix(1, 1) * sourceNormal.y() + normalMatrix(1, 2) * sourceNormal.z(),
+                        normalMatrix(2, 0) * sourceNormal.x() + normalMatrix(2, 1) * sourceNormal.y() + normalMatrix(2, 2) * sourceNormal.z()).normalized();
+                const QVector3D color = vertexIndex < renderMesh.colors.size()
+                    ? renderMesh.colors[vertexIndex]
                     : QVector3D(0.72f, 0.74f, 0.78f);
 
                 importedVertices_.append({ position, normal, color });
             }
 
-            for (std::uint32_t index : mesh->indices) {
+            for (std::uint32_t index : renderMesh.indices) {
                 importedIndices_.append(vertexOffset + index);
             }
 
-            vertexOffset += static_cast<std::uint32_t>(mesh->positions.size());
+            vertexOffset += static_cast<std::uint32_t>(renderMesh.positions.size());
         }
     }
 

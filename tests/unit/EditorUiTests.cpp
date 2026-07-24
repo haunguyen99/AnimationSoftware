@@ -17,6 +17,7 @@
 
 #include "MainWindow.h"
 #include "ScriptCommandSystem.h"
+#include "ViewportWorkspaceWidget.h"
 
 class EditorUiTests : public QObject
 {
@@ -24,6 +25,10 @@ class EditorUiTests : public QObject
 
 private slots:
     void restoreDefaultLayoutResetsFloatingDocks();
+    void transformToolbarUpdatesViewportToolState();
+    void viewMenuSwitchesViewportCameraPresets();
+    void spaceTogglesQuadViewAndMaximizesActiveViewport();
+    void editMenuUndoRedoRestoresCreatedPrimitive();
     void scriptEditorExecutesPrimitiveCommand();
     void scriptEditorLogsChannelBoxChanges();
     void scriptEditorExecutesTimelineCommands();
@@ -33,10 +38,13 @@ private slots:
     void scriptCommandRegistryDispatchesFileImportCommand();
     void scriptCommandRegistryDispatchesSetKeyframeCommand();
     void scriptCommandRegistryDispatchesDeleteKeyCommand();
+    void scriptCommandRegistryDispatchesCopyAndShiftKeyCommands();
     void scriptCommandRegistryDispatchesAutoKeyCommand();
     void scriptCommandRegistryDispatchesJointHierarchyCommands();
     void scriptCommandRegistryDispatchesJointOrientationAndBindPoseCommands();
+    void scriptCommandRegistryDispatchesBindSkinCommand();
     void hierarchyActionsParentAndUnparentJoints();
+    void bindSkinActionBindsMeshToMarkedJoint();
     void hierarchyActionsExposeMayaLikeShortcuts();
     void leftMouseDragReparentsOutlinerItems();
     void jointInspectorEditsOrientationAndCapturesBindPose();
@@ -100,7 +108,7 @@ void EditorUiTests::restoreDefaultLayoutResetsFloatingDocks()
     auto* inspectorDock = window.findChild<QDockWidget*>("InspectorDock");
     auto* restoreAction = window.findChild<QAction*>("restoreWorkspaceLayoutAction");
 
-    QVERIFY(viewportDock != nullptr);
+    QVERIFY(window.centralWidget() != nullptr);
     QVERIFY(outlinerDock != nullptr);
     QVERIFY(inspectorDock != nullptr);
     QVERIFY(restoreAction != nullptr);
@@ -113,11 +121,199 @@ void EditorUiTests::restoreDefaultLayoutResetsFloatingDocks()
     restoreAction->trigger();
 
     QTRY_VERIFY(!outlinerDock->isFloating());
-    QTRY_VERIFY(!viewportDock->isFloating());
     QTRY_VERIFY(!inspectorDock->isFloating());
     QTRY_VERIFY(outlinerDock->isVisible());
-    QTRY_VERIFY(viewportDock->isVisible());
     QTRY_VERIFY(inspectorDock->isVisible());
+}
+
+void EditorUiTests::transformToolbarUpdatesViewportToolState()
+{
+    MainWindow window;
+    window.show();
+    QTRY_VERIFY(window.isVisible());
+    QTest::qWait(200);
+
+    auto* viewport = dynamic_cast<ViewportWorkspaceWidget*>(window.findChild<QWidget*>("viewportWidget"));
+    auto* translateAction = window.findChild<QAction*>("translateAction");
+    auto* rotateAction = window.findChild<QAction*>("rotateAction");
+    auto* scaleAction = window.findChild<QAction*>("scaleAction");
+    auto* worldAxisAction = window.findChild<QAction*>("worldAxisAction");
+    auto* localAxisAction = window.findChild<QAction*>("localAxisAction");
+
+    QVERIFY(viewport != nullptr);
+    QVERIFY(translateAction != nullptr);
+    QVERIFY(rotateAction != nullptr);
+    QVERIFY(scaleAction != nullptr);
+    QVERIFY(worldAxisAction != nullptr);
+    QVERIFY(localAxisAction != nullptr);
+
+    QCOMPARE(viewport->transformMode(), ViewportWorkspaceWidget::TransformMode::Translate);
+    QCOMPARE(viewport->axisOrientation(), ViewportWorkspaceWidget::AxisOrientation::World);
+    QVERIFY(translateAction->isChecked());
+    QVERIFY(worldAxisAction->isChecked());
+
+    rotateAction->trigger();
+    QCOMPARE(viewport->transformMode(), ViewportWorkspaceWidget::TransformMode::Rotate);
+    QVERIFY(rotateAction->isChecked());
+    QVERIFY(!translateAction->isChecked());
+
+    scaleAction->trigger();
+    QCOMPARE(viewport->transformMode(), ViewportWorkspaceWidget::TransformMode::Scale);
+    QVERIFY(scaleAction->isChecked());
+    QVERIFY(!rotateAction->isChecked());
+
+    localAxisAction->trigger();
+    QCOMPARE(viewport->axisOrientation(), ViewportWorkspaceWidget::AxisOrientation::Local);
+    QVERIFY(localAxisAction->isChecked());
+    QVERIFY(!worldAxisAction->isChecked());
+
+    worldAxisAction->trigger();
+    QCOMPARE(viewport->axisOrientation(), ViewportWorkspaceWidget::AxisOrientation::World);
+    QVERIFY(worldAxisAction->isChecked());
+    QVERIFY(!localAxisAction->isChecked());
+}
+
+void EditorUiTests::viewMenuSwitchesViewportCameraPresets()
+{
+    MainWindow window;
+    window.show();
+    QTRY_VERIFY(window.isVisible());
+    QTest::qWait(200);
+
+    auto* viewport = dynamic_cast<ViewportWorkspaceWidget*>(window.findChild<QWidget*>("viewportWidget"));
+    auto* perspectiveCameraAction = window.findChild<QAction*>("perspectiveCameraAction");
+    auto* frontCameraAction = window.findChild<QAction*>("frontCameraAction");
+    auto* backCameraAction = window.findChild<QAction*>("backCameraAction");
+    auto* leftCameraAction = window.findChild<QAction*>("leftCameraAction");
+    auto* rightCameraAction = window.findChild<QAction*>("rightCameraAction");
+    auto* topCameraAction = window.findChild<QAction*>("topCameraAction");
+    auto* bottomCameraAction = window.findChild<QAction*>("bottomCameraAction");
+
+    QVERIFY(viewport != nullptr);
+    QVERIFY(perspectiveCameraAction != nullptr);
+    QVERIFY(frontCameraAction != nullptr);
+    QVERIFY(backCameraAction != nullptr);
+    QVERIFY(leftCameraAction != nullptr);
+    QVERIFY(rightCameraAction != nullptr);
+    QVERIFY(topCameraAction != nullptr);
+    QVERIFY(bottomCameraAction != nullptr);
+
+    QCOMPARE(viewport->cameraViewPreset(), ViewportWorkspaceWidget::CameraViewPreset::Perspective);
+    QCOMPARE(viewport->cameraViewLabel(), QString("persp"));
+    QVERIFY(perspectiveCameraAction->isChecked());
+
+    frontCameraAction->trigger();
+    QCOMPARE(viewport->cameraViewPreset(), ViewportWorkspaceWidget::CameraViewPreset::Front);
+    QCOMPARE(viewport->cameraViewLabel(), QString("front"));
+    QVERIFY(frontCameraAction->isChecked());
+    QVERIFY(!perspectiveCameraAction->isChecked());
+
+    topCameraAction->trigger();
+    QCOMPARE(viewport->cameraViewPreset(), ViewportWorkspaceWidget::CameraViewPreset::Top);
+    QCOMPARE(viewport->cameraViewLabel(), QString("top"));
+    QVERIFY(topCameraAction->isChecked());
+    QVERIFY(!frontCameraAction->isChecked());
+
+    backCameraAction->trigger();
+    QCOMPARE(viewport->cameraViewPreset(), ViewportWorkspaceWidget::CameraViewPreset::Back);
+    QCOMPARE(viewport->cameraViewLabel(), QString("back"));
+    QVERIFY(backCameraAction->isChecked());
+
+    leftCameraAction->trigger();
+    QCOMPARE(viewport->cameraViewPreset(), ViewportWorkspaceWidget::CameraViewPreset::Left);
+    QCOMPARE(viewport->cameraViewLabel(), QString("left"));
+    QVERIFY(leftCameraAction->isChecked());
+
+    rightCameraAction->trigger();
+    QCOMPARE(viewport->cameraViewPreset(), ViewportWorkspaceWidget::CameraViewPreset::Right);
+    QCOMPARE(viewport->cameraViewLabel(), QString("side"));
+    QVERIFY(rightCameraAction->isChecked());
+
+    bottomCameraAction->trigger();
+    QCOMPARE(viewport->cameraViewPreset(), ViewportWorkspaceWidget::CameraViewPreset::Bottom);
+    QCOMPARE(viewport->cameraViewLabel(), QString("bottom"));
+    QVERIFY(bottomCameraAction->isChecked());
+
+    perspectiveCameraAction->trigger();
+    QCOMPARE(viewport->cameraViewPreset(), ViewportWorkspaceWidget::CameraViewPreset::Perspective);
+    QCOMPARE(viewport->cameraViewLabel(), QString("persp"));
+    QVERIFY(perspectiveCameraAction->isChecked());
+    QVERIFY(!bottomCameraAction->isChecked());
+}
+
+void EditorUiTests::spaceTogglesQuadViewAndMaximizesActiveViewport()
+{
+    MainWindow window;
+    window.show();
+    QTRY_VERIFY(window.isVisible());
+    QTest::qWait(200);
+
+    auto* viewportWorkspace = dynamic_cast<ViewportWorkspaceWidget*>(window.findChild<QWidget*>("viewportWidget"));
+    auto* perspectiveViewport = window.findChild<QWidget*>("perspectiveViewportWidget");
+    auto* frontViewport = window.findChild<QWidget*>("frontViewportWidget");
+
+    QVERIFY(viewportWorkspace != nullptr);
+    QVERIFY(perspectiveViewport != nullptr);
+    QVERIFY(frontViewport != nullptr);
+
+    QVERIFY(!viewportWorkspace->quadViewEnabled());
+    QCOMPARE(viewportWorkspace->activeCameraViewPreset(), ViewportWorkspaceWidget::CameraViewPreset::Perspective);
+
+    QTest::keyClick(viewportWorkspace, Qt::Key_Space);
+    QTRY_VERIFY(viewportWorkspace->quadViewEnabled());
+    QVERIFY(perspectiveViewport->isVisible());
+    QVERIFY(frontViewport->isVisible());
+
+    QTest::mouseClick(frontViewport, Qt::LeftButton, Qt::NoModifier, QPoint(20, 20));
+    QCOMPARE(viewportWorkspace->activeCameraViewPreset(), ViewportWorkspaceWidget::CameraViewPreset::Front);
+
+    QTest::keyClick(viewportWorkspace, Qt::Key_Space);
+    QTRY_VERIFY(!viewportWorkspace->quadViewEnabled());
+    QCOMPARE(viewportWorkspace->activeCameraViewPreset(), ViewportWorkspaceWidget::CameraViewPreset::Front);
+    QTRY_VERIFY(viewportWorkspace->isCameraViewVisible(ViewportWorkspaceWidget::CameraViewPreset::Front));
+    QVERIFY(!viewportWorkspace->isCameraViewVisible(ViewportWorkspaceWidget::CameraViewPreset::Perspective));
+}
+
+void EditorUiTests::editMenuUndoRedoRestoresCreatedPrimitive()
+{
+    MainWindow window;
+    window.show();
+    QTRY_VERIFY(window.isVisible());
+    QTest::qWait(200);
+
+    auto* openPrimitivesAction = window.findChild<QAction*>("polygonPrimitivesAction");
+    auto* primitiveList = window.findChild<QListWidget*>("polygonPrimitivesList");
+    auto* createPrimitiveButton = window.findChild<QPushButton*>("createPrimitiveButton");
+    auto* outlinerTree = window.findChild<QTreeWidget*>("outlinerTree");
+    auto* undoAction = window.findChild<QAction*>("undoAction");
+    auto* redoAction = window.findChild<QAction*>("redoAction");
+
+    QVERIFY(openPrimitivesAction != nullptr);
+    QVERIFY(primitiveList != nullptr);
+    QVERIFY(createPrimitiveButton != nullptr);
+    QVERIFY(outlinerTree != nullptr);
+    QVERIFY(undoAction != nullptr);
+    QVERIFY(redoAction != nullptr);
+
+    const QList<QListWidgetItem*> matches = primitiveList->findItems("Cube", Qt::MatchExactly);
+    QVERIFY(!matches.isEmpty());
+
+    openPrimitivesAction->trigger();
+    primitiveList->setCurrentItem(matches.first());
+    createPrimitiveButton->click();
+
+    QTRY_COMPARE(outlinerTree->topLevelItemCount(), 1);
+    QCOMPARE(outlinerTree->topLevelItem(0)->text(0), QString("pCube1"));
+    QVERIFY(undoAction->isEnabled());
+
+    undoAction->trigger();
+    QTRY_COMPARE(outlinerTree->topLevelItemCount(), 1);
+    QCOMPARE(outlinerTree->topLevelItem(0)->text(0), QString("No scene loaded"));
+    QVERIFY(redoAction->isEnabled());
+
+    redoAction->trigger();
+    QTRY_COMPARE(outlinerTree->topLevelItemCount(), 1);
+    QCOMPARE(outlinerTree->topLevelItem(0)->text(0), QString("pCube1"));
 }
 
 void EditorUiTests::scriptEditorExecutesPrimitiveCommand()
@@ -373,6 +569,40 @@ void EditorUiTests::scriptCommandRegistryDispatchesDeleteKeyCommand()
     QCOMPARE(execution.resultLine, QString("// Result: deleted key on pCube1 at frame 12 //"));
 }
 
+void EditorUiTests::scriptCommandRegistryDispatchesCopyAndShiftKeyCommands()
+{
+    ScriptCommandRegistry registry;
+    ScriptCommandContext context;
+    QString copiedObject;
+    int copySourceFrame = -1;
+    int copyTargetFrame = -1;
+    QString shiftedObject;
+    int shiftedDelta = 0;
+    context.copyKeyframe = [&copiedObject, &copySourceFrame, &copyTargetFrame](const QString& objectName, int sourceFrame, int targetFrame) {
+        copiedObject = objectName;
+        copySourceFrame = sourceFrame;
+        copyTargetFrame = targetFrame;
+        return true;
+    };
+    context.shiftKeyframes = [&shiftedObject, &shiftedDelta](const QString& objectName, int frameDelta) {
+        shiftedObject = objectName;
+        shiftedDelta = frameDelta;
+        return true;
+    };
+
+    ScriptCommandExecution execution;
+    QVERIFY(registry.execute("copyKey pCube1 -t 10 -to 11;", context, &execution));
+    QCOMPARE(copiedObject, QString("pCube1"));
+    QCOMPARE(copySourceFrame, 10);
+    QCOMPARE(copyTargetFrame, 11);
+    QCOMPARE(execution.resultLine, QString("// Result: copied key on pCube1 from frame 10 to 11 //"));
+
+    QVERIFY(registry.execute("shiftKey pCube1 -by -1;", context, &execution));
+    QCOMPARE(shiftedObject, QString("pCube1"));
+    QCOMPARE(shiftedDelta, -1);
+    QCOMPARE(execution.resultLine, QString("// Result: shifted keys on pCube1 by -1 //"));
+}
+
 void EditorUiTests::scriptCommandRegistryDispatchesAutoKeyCommand()
 {
     ScriptCommandRegistry registry;
@@ -478,6 +708,25 @@ void EditorUiTests::scriptCommandRegistryDispatchesJointOrientationAndBindPoseCo
     QCOMPARE(execution.resultLine, QString("// Result: captured bind pose on shoulder_jnt recursively //"));
 }
 
+void EditorUiTests::scriptCommandRegistryDispatchesBindSkinCommand()
+{
+    ScriptCommandRegistry registry;
+    ScriptCommandContext context;
+    QString boundMesh;
+    QString boundJoint;
+    context.bindSkin = [&boundMesh, &boundJoint](const QString& meshName, const QString& jointName) {
+        boundMesh = meshName;
+        boundJoint = jointName;
+        return true;
+    };
+
+    ScriptCommandExecution execution;
+    QVERIFY(registry.execute("bindSkin pCube1 root_jnt;", context, &execution));
+    QCOMPARE(boundMesh, QString("pCube1"));
+    QCOMPARE(boundJoint, QString("root_jnt"));
+    QCOMPARE(execution.resultLine, QString("// Result: bound pCube1 to root_jnt //"));
+}
+
 void EditorUiTests::hierarchyActionsParentAndUnparentJoints()
 {
     MainWindow window;
@@ -529,6 +778,51 @@ void EditorUiTests::hierarchyActionsParentAndUnparentJoints()
     rootItem = outlinerTree->topLevelItem(0);
     QVERIFY(rootItem != nullptr);
     QTRY_COMPARE(rootItem->childCount(), 1);
+}
+
+void EditorUiTests::bindSkinActionBindsMeshToMarkedJoint()
+{
+    MainWindow window;
+    window.show();
+    QTRY_VERIFY(window.isVisible());
+    QTest::qWait(200);
+
+    auto* createJointAction = window.findChild<QAction*>("createJointAction");
+    auto* markHierarchyParentAction = window.findChild<QAction*>("markHierarchyParentAction");
+    auto* bindSkinAction = window.findChild<QAction*>("bindSkinAction");
+    auto* openPrimitivesAction = window.findChild<QAction*>("polygonPrimitivesAction");
+    auto* primitiveList = window.findChild<QListWidget*>("polygonPrimitivesList");
+    auto* createPrimitiveButton = window.findChild<QPushButton*>("createPrimitiveButton");
+    auto* outlinerTree = window.findChild<QTreeWidget*>("outlinerTree");
+    auto* skinBindingStatusLabel = window.findChild<QLabel*>("skinBindingStatusLabel");
+
+    QVERIFY(createJointAction != nullptr);
+    QVERIFY(markHierarchyParentAction != nullptr);
+    QVERIFY(bindSkinAction != nullptr);
+    QVERIFY(openPrimitivesAction != nullptr);
+    QVERIFY(primitiveList != nullptr);
+    QVERIFY(createPrimitiveButton != nullptr);
+    QVERIFY(outlinerTree != nullptr);
+    QVERIFY(skinBindingStatusLabel != nullptr);
+
+    createJointAction->trigger();
+    QTRY_COMPARE(outlinerTree->topLevelItemCount(), 1);
+    QTreeWidgetItem* jointItem = outlinerTree->topLevelItem(0);
+    QVERIFY(jointItem != nullptr);
+    outlinerTree->setCurrentItem(jointItem);
+    markHierarchyParentAction->trigger();
+
+    openPrimitivesAction->trigger();
+    const QList<QListWidgetItem*> matches = primitiveList->findItems("Cube", Qt::MatchExactly);
+    QVERIFY(!matches.isEmpty());
+    primitiveList->setCurrentItem(matches.first());
+    createPrimitiveButton->click();
+
+    QTRY_VERIFY(bindSkinAction->isEnabled());
+    bindSkinAction->trigger();
+
+    QTRY_VERIFY(skinBindingStatusLabel->text().contains("Skin binding:"));
+    QVERIFY(!skinBindingStatusLabel->text().contains("not bound"));
 }
 
 void EditorUiTests::jointInspectorEditsOrientationAndCapturesBindPose()
@@ -652,6 +946,10 @@ void EditorUiTests::timelineUiShowsKeyframeFeedback()
     auto* autoKeyButton = window.findChild<QPushButton*>("autoKeyButton");
     auto* setKeyButton = window.findChild<QPushButton*>("setKeyButton");
     auto* deleteKeyButton = window.findChild<QPushButton*>("deleteKeyButton");
+    auto* duplicateKeyButton = window.findChild<QPushButton*>("duplicateKeyButton");
+    auto* shiftKeysRightButton = window.findChild<QPushButton*>("shiftKeysRightButton");
+    auto* previousKeyButton = window.findChild<QPushButton*>("previousKeyButton");
+    auto* nextKeyButton = window.findChild<QPushButton*>("nextKeyButton");
     auto* timelineStatusLabel = window.findChild<QLabel*>("timelineStatusLabel");
     auto* currentFrameSpinBox = window.findChild<QSpinBox*>("currentFrameSpinBox");
     auto* keyframeTimelineWidget = window.findChild<QWidget*>("keyframeTimelineWidget");
@@ -663,6 +961,10 @@ void EditorUiTests::timelineUiShowsKeyframeFeedback()
     QVERIFY(autoKeyButton != nullptr);
     QVERIFY(setKeyButton != nullptr);
     QVERIFY(deleteKeyButton != nullptr);
+    QVERIFY(duplicateKeyButton != nullptr);
+    QVERIFY(shiftKeysRightButton != nullptr);
+    QVERIFY(previousKeyButton != nullptr);
+    QVERIFY(nextKeyButton != nullptr);
     QVERIFY(timelineStatusLabel != nullptr);
     QVERIFY(currentFrameSpinBox != nullptr);
     QVERIFY(keyframeTimelineWidget != nullptr);
@@ -689,25 +991,39 @@ void EditorUiTests::timelineUiShowsKeyframeFeedback()
     translateXSpinBox->setValue(3.0);
     QTRY_COMPARE(setKeyButton->text(), QString("Key Selected"));
     QTRY_VERIFY(deleteKeyButton->isEnabled());
+    QTRY_VERIFY(duplicateKeyButton->isEnabled());
     QVERIFY(timelineStatusLabel->text().contains("frame 10 keyed"));
+
+    duplicateKeyButton->click();
+    QTRY_COMPARE(currentFrameSpinBox->value(), 11);
+    QVERIFY(timelineStatusLabel->text().contains("frame 11 keyed"));
+
+    previousKeyButton->click();
+    QTRY_COMPARE(currentFrameSpinBox->value(), 10);
+    nextKeyButton->click();
+    QTRY_COMPARE(currentFrameSpinBox->value(), 11);
+
+    shiftKeysRightButton->click();
+    QTRY_COMPARE(currentFrameSpinBox->value(), 12);
+    QVERIFY(timelineStatusLabel->text().contains("frame 12 keyed"));
 
     deleteKeyButton->click();
     QTRY_VERIFY(!deleteKeyButton->isEnabled());
-    QVERIFY(timelineStatusLabel->text().contains("frame 10 has no key"));
+    QVERIFY(timelineStatusLabel->text().contains("frame 12 has no key"));
 
     translateXSpinBox->setValue(5.0);
     QTRY_VERIFY(deleteKeyButton->isEnabled());
-    QVERIFY(timelineStatusLabel->text().contains("frame 10 keyed"));
+    QVERIFY(timelineStatusLabel->text().contains("frame 12 keyed"));
 
-    currentFrameSpinBox->setValue(0);
+    currentFrameSpinBox->setValue(1);
     QTRY_COMPARE(setKeyButton->text(), QString("Key Selected"));
     QTRY_VERIFY(deleteKeyButton->isEnabled());
-    QVERIFY(timelineStatusLabel->text().contains("frame 0 keyed"));
+    QVERIFY(timelineStatusLabel->text().contains("frame 1 keyed"));
 
-    currentFrameSpinBox->setValue(10);
+    currentFrameSpinBox->setValue(12);
     QTRY_COMPARE(setKeyButton->text(), QString("Key Selected"));
     QTRY_VERIFY(deleteKeyButton->isEnabled());
-    QVERIFY(timelineStatusLabel->text().contains("frame 10 keyed"));
+    QVERIFY(timelineStatusLabel->text().contains("frame 12 keyed"));
 }
 
 int main(int argc, char** argv)

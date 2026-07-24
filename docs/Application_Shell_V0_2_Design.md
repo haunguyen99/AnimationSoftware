@@ -122,13 +122,14 @@ Khong co scene
 
 Pattern chinh:
 
-* `MainWindow` = orchestration module cho `Application Shell`
+* `EditorShell` = `module` shell cap `Core/Application`
+* `MainWindow` = adapter `Qt Widgets` hien tai dang implement `EditorShell`
 * `ViewportWidget` = viewport adapter
 * `Outliner` / `Inspector` = read-only presentation modules trong `v0.2`
 
 Rule:
 
-* shell state orchestration nam o `MainWindow`
+* shell state orchestration nam o `EditorShell`, hien duoc host boi `MainWindow`
 * scene source of truth van nam o `ViewportWidget` / `Scene`
 * panel khong tu sua domain data trong phase nay
 
@@ -136,12 +137,18 @@ Rule:
 
 ## Module Boundaries
 
-`MainWindow`
+`EditorShell` / `MainWindow`
 
 * so huu layout shell
 * so huu action UI muc app-shell
 * refresh panel state
 * enable/disable action theo shell state
+
+Current ownership note:
+
+* ve `module`, day la phan cua `Core/Application`
+* ve implementation, `MainWindow` la concrete adapter hien tai
+* khong nen doc no nhu feature module host cho `Scene`, `Animation`, `Rigging`, hay `Rendering`
 
 `ViewportWidget`
 

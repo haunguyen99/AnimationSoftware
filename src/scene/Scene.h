@@ -36,16 +36,25 @@ public:
     bool setLocalTransform(SceneObject::Id id, const Transform& transform, bool autoKeyEnabled = false);
     bool setObjectKeyframe(SceneObject::Id id, int frame);
     bool removeObjectKeyframe(SceneObject::Id id, int frame);
+    bool duplicateObjectKeyframe(SceneObject::Id id, int sourceFrame, int targetFrame);
+    bool offsetObjectKeyframes(SceneObject::Id id, int frameDelta);
+    int nextObjectKeyframe(SceneObject::Id id, int frame) const;
+    int previousObjectKeyframe(SceneObject::Id id, int frame) const;
     bool setObjectVisible(SceneObject::Id id, bool visible);
     bool setJointOrientation(SceneObject::Id id, const QQuaternion& orientation);
     bool resetJointOrientation(SceneObject::Id id);
     bool alignJointOrientationToChild(SceneObject::Id id);
     bool captureBindPose(SceneObject::Id id, bool recursive = false);
+    bool bindObjectToSkeleton(SceneObject::Id objectId, SceneObject::Id rootJointId);
+    bool setObjectSkinBinding(SceneObject::Id id, const QVector<SceneObject::Id>& jointIds, const SkinWeightTable& weights);
+    bool clearObjectSkinBinding(SceneObject::Id id);
+    bool buildDeformedMesh(SceneObject::Id objectId, int meshHandle, MeshData* deformedMesh) const;
     bool reparentObject(SceneObject::Id id, SceneObject::Id newParentId, bool keepWorldTransform = true);
     bool removeObject(SceneObject::Id id);
     SceneObject::Id duplicateSubtree(SceneObject::Id id, SceneObject::Id newParentId = 0);
     void optimizeStorage();
     QMatrix4x4 worldTransform(SceneObject::Id id) const;
+    QMatrix4x4 bindPoseWorldTransform(SceneObject::Id id) const;
 
     void rebuildSceneBounds();
     void rebuildWorldData();
@@ -57,6 +66,7 @@ private:
     Transform composeObjectLocalTransform(const SceneObject& object, const Transform& baseTransform) const;
     bool isDescendantOf(SceneObject::Id id, SceneObject::Id potentialAncestorId) const;
     Transform evaluateObjectTransformAtFrame(const SceneObject& object, int frame) const;
+    QVector<SceneObject::Id> collectJointSubtree(SceneObject::Id rootJointId) const;
     SceneObject::Id duplicateSubtreeRecursive(const Scene& sourceScene, SceneObject::Id sourceId, SceneObject::Id newParentId);
     void removeObjectRecursive(SceneObject::Id id);
     void rebuildWorldDataForObject(SceneObject::Id objectId, const QMatrix4x4& parentWorldMatrix);

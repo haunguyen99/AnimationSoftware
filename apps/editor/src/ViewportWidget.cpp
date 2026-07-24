@@ -4,6 +4,7 @@
 #include <QLineF>
 #include <QMouseEvent>
 #include <QOpenGLContext>
+#include <QPainter>
 #include <QVector2D>
 #include <QtMath>
 
@@ -111,6 +112,63 @@ void ViewportWidget::resetCamera()
     requestRender();
 }
 
+void ViewportWidget::setCameraViewPreset(CameraViewPreset preset)
+{
+    EditorCamera::ViewPreset cameraPreset = EditorCamera::ViewPreset::Perspective;
+    switch (preset) {
+    case CameraViewPreset::Front:
+        cameraPreset = EditorCamera::ViewPreset::Front;
+        break;
+    case CameraViewPreset::Back:
+        cameraPreset = EditorCamera::ViewPreset::Back;
+        break;
+    case CameraViewPreset::Left:
+        cameraPreset = EditorCamera::ViewPreset::Left;
+        break;
+    case CameraViewPreset::Right:
+        cameraPreset = EditorCamera::ViewPreset::Right;
+        break;
+    case CameraViewPreset::Top:
+        cameraPreset = EditorCamera::ViewPreset::Top;
+        break;
+    case CameraViewPreset::Bottom:
+        cameraPreset = EditorCamera::ViewPreset::Bottom;
+        break;
+    case CameraViewPreset::Perspective:
+        break;
+    }
+
+    camera_.setViewPreset(cameraPreset);
+    requestRender();
+}
+
+ViewportWidget::CameraViewPreset ViewportWidget::cameraViewPreset() const
+{
+    switch (camera_.viewPreset()) {
+    case EditorCamera::ViewPreset::Front:
+        return CameraViewPreset::Front;
+    case EditorCamera::ViewPreset::Back:
+        return CameraViewPreset::Back;
+    case EditorCamera::ViewPreset::Left:
+        return CameraViewPreset::Left;
+    case EditorCamera::ViewPreset::Right:
+        return CameraViewPreset::Right;
+    case EditorCamera::ViewPreset::Top:
+        return CameraViewPreset::Top;
+    case EditorCamera::ViewPreset::Bottom:
+        return CameraViewPreset::Bottom;
+    case EditorCamera::ViewPreset::Perspective:
+        break;
+    }
+
+    return CameraViewPreset::Perspective;
+}
+
+QString ViewportWidget::cameraViewLabel() const
+{
+    return cameraViewLabelText();
+}
+
 void ViewportWidget::frameScene()
 {
     if (!scene_.isEmpty() && scene_.sceneBounds().isValid()) {
@@ -164,6 +222,12 @@ void ViewportWidget::setBackfaceCullingEnabled(bool enabled)
     requestRender();
 }
 
+void ViewportWidget::setSelectionOutlineVisible(bool visible)
+{
+    renderOptions_.showSelectionOutline = visible;
+    requestRender();
+}
+
 void ViewportWidget::setTransformMode(TransformMode mode)
 {
     transformMode_ = mode;
@@ -198,6 +262,11 @@ void ViewportWidget::setObjectTransformChangedCallback(std::function<void(SceneO
     objectTransformChangedCallback_ = std::move(callback);
 }
 
+void ViewportWidget::setBeforeSceneMutationCallback(std::function<void()> callback)
+{
+    beforeSceneMutationCallback_ = std::move(callback);
+}
+
 void ViewportWidget::setAutoKeyEnabled(bool enabled)
 {
     autoKeyEnabled_ = enabled;
@@ -219,8 +288,10 @@ bool ViewportWidget::importFbx(const QString& filePath)
     }
 
     if (scene_.isEmpty()) {
+        notifyBeforeSceneMutation();
         scene_ = result.scene;
     } else {
+        notifyBeforeSceneMutation();
         scene_.appendScene(result.scene);
     }
 
@@ -238,6 +309,7 @@ bool ViewportWidget::importFbx(const QString& filePath)
 
 void ViewportWidget::clearScene()
 {
+    notifyBeforeSceneMutation();
     scene_.clear();
     selectedObjectId_ = 0;
     syncSceneToRenderer();
@@ -254,6 +326,7 @@ void ViewportWidget::replaceScene(const Scene& scene)
 
 void ViewportWidget::optimizeSceneStorage()
 {
+    notifyBeforeSceneMutation();
     scene_.optimizeStorage();
     syncSceneToRenderer();
     requestRender();
@@ -271,6 +344,7 @@ bool ViewportWidget::lastImportSucceeded() const
 
 bool ViewportWidget::setObjectLocalTransform(SceneObject::Id objectId, const Transform& transform)
 {
+    notifyBeforeSceneMutation();
     if (!scene_.setLocalTransform(objectId, transform, autoKeyEnabled_)) {
         return false;
     }
@@ -282,6 +356,7 @@ bool ViewportWidget::setObjectLocalTransform(SceneObject::Id objectId, const Tra
 
 bool ViewportWidget::setObjectVisibility(SceneObject::Id objectId, bool visible)
 {
+    notifyBeforeSceneMutation();
     if (!scene_.setObjectVisible(objectId, visible)) {
         return false;
     }
@@ -305,6 +380,7 @@ void ViewportWidget::setCurrentFrame(int frame)
 
 bool ViewportWidget::setObjectKeyframe(SceneObject::Id objectId, int frame)
 {
+    notifyBeforeSceneMutation();
     if (!scene_.setObjectKeyframe(objectId, frame)) {
         return false;
     }
@@ -316,6 +392,7 @@ bool ViewportWidget::setObjectKeyframe(SceneObject::Id objectId, int frame)
 
 bool ViewportWidget::removeObjectKeyframe(SceneObject::Id objectId, int frame)
 {
+    notifyBeforeSceneMutation();
     if (!scene_.removeObjectKeyframe(objectId, frame)) {
         return false;
     }
@@ -327,6 +404,7 @@ bool ViewportWidget::removeObjectKeyframe(SceneObject::Id objectId, int frame)
 
 bool ViewportWidget::setJointOrientation(SceneObject::Id objectId, const QQuaternion& orientation)
 {
+    notifyBeforeSceneMutation();
     if (!scene_.setJointOrientation(objectId, orientation)) {
         return false;
     }
@@ -338,6 +416,7 @@ bool ViewportWidget::setJointOrientation(SceneObject::Id objectId, const QQuater
 
 bool ViewportWidget::resetJointOrientation(SceneObject::Id objectId)
 {
+    notifyBeforeSceneMutation();
     if (!scene_.resetJointOrientation(objectId)) {
         return false;
     }
@@ -349,6 +428,7 @@ bool ViewportWidget::resetJointOrientation(SceneObject::Id objectId)
 
 bool ViewportWidget::alignJointOrientationToChild(SceneObject::Id objectId)
 {
+    notifyBeforeSceneMutation();
     if (!scene_.alignJointOrientationToChild(objectId)) {
         return false;
     }
@@ -360,6 +440,7 @@ bool ViewportWidget::alignJointOrientationToChild(SceneObject::Id objectId)
 
 bool ViewportWidget::captureBindPose(SceneObject::Id objectId, bool recursive)
 {
+    notifyBeforeSceneMutation();
     if (!scene_.captureBindPose(objectId, recursive)) {
         return false;
     }
@@ -380,6 +461,7 @@ SceneObject::Id ViewportWidget::createPrimitive(PrimitiveMeshFactory::Type type,
         return 0;
     }
 
+    notifyBeforeSceneMutation();
     const SceneObject::Id objectId = scene_.createObject(name.isEmpty() ? PrimitiveMeshFactory::displayName(type) : name);
     SceneObject* object = scene_.findObject(objectId);
     if (object == nullptr) {
@@ -400,6 +482,7 @@ SceneObject::Id ViewportWidget::createPrimitive(PrimitiveMeshFactory::Type type,
 
 SceneObject::Id ViewportWidget::createJoint(const QString& name, SceneObject::Id parentId)
 {
+    notifyBeforeSceneMutation();
     const SceneObject::Id objectId = scene_.createJoint(name, parentId);
     if (objectId == 0) {
         return 0;
@@ -443,6 +526,7 @@ void ViewportWidget::initializeGL()
     renderer_.syncScene(scene_);
     syncRendererSelection();
     qCInfo(logViewport) << "init ok";
+    requestRender();
 }
 
 void ViewportWidget::resizeGL(int width, int height)
@@ -467,10 +551,20 @@ void ViewportWidget::paintGL()
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     renderer_.render(camera_, renderOptions_);
+
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    painter.setPen(QColor(235, 235, 235));
+    painter.setFont(QFont("Segoe UI", 9, QFont::DemiBold));
+
+    const QString label = cameraViewLabelText();
+    const QRect labelRect(10, height() - 28, 120, 20);
+    painter.drawText(labelRect, Qt::AlignLeft | Qt::AlignVCenter, label);
 }
 
 void ViewportWidget::mousePressEvent(QMouseEvent* event)
 {
+    setFocus(Qt::MouseFocusReason);
     handleHotkeys(event);
     lastMousePosition_ = event->pos();
     activeButtons_ = event->buttons();
@@ -518,6 +612,9 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* event)
         requestRender();
     } else if ((event->modifiers() & Qt::AltModifier) && (event->buttons() & Qt::MiddleButton)) {
         camera_.pan(static_cast<float>(delta.x()), static_cast<float>(delta.y()));
+        requestRender();
+    } else if ((event->modifiers() & Qt::AltModifier) && (event->buttons() & Qt::RightButton)) {
+        camera_.zoom(static_cast<float>(-delta.y()) * 0.05f);
         requestRender();
     }
 
@@ -738,6 +835,37 @@ QVector3D ViewportWidget::gizmoAxisDirectionWorld(GizmoAxis axis) const
     return axes[static_cast<int>(axis)];
 }
 
+QVector3D ViewportWidget::selectedObjectWorldOrigin() const
+{
+    if (selectedObjectId_ == 0) {
+        return QVector3D();
+    }
+
+    return scene_.worldTransform(selectedObjectId_) * QVector3D(0.0f, 0.0f, 0.0f);
+}
+
+QString ViewportWidget::cameraViewLabelText() const
+{
+    switch (cameraViewPreset()) {
+    case CameraViewPreset::Front:
+        return "front";
+    case CameraViewPreset::Back:
+        return "back";
+    case CameraViewPreset::Left:
+        return "left";
+    case CameraViewPreset::Right:
+        return "side";
+    case CameraViewPreset::Top:
+        return "top";
+    case CameraViewPreset::Bottom:
+        return "bottom";
+    case CameraViewPreset::Perspective:
+        break;
+    }
+
+    return "persp";
+}
+
 QMatrix4x4 ViewportWidget::parentWorldTransform() const
 {
     const SceneObject* object = scene_.findObject(selectedObjectId_);
@@ -751,9 +879,11 @@ QMatrix4x4 ViewportWidget::parentWorldTransform() const
 QVector3D ViewportWidget::gizmoOrigin() const
 {
     const SceneObject* object = scene_.findObject(selectedObjectId_);
-    return object != nullptr && object->worldBounds().isValid()
-        ? object->worldBounds().center()
-        : QVector3D();
+    if (object == nullptr) {
+        return QVector3D();
+    }
+
+    return selectedObjectWorldOrigin();
 }
 
 float ViewportWidget::gizmoSize() const
@@ -763,12 +893,19 @@ float ViewportWidget::gizmoSize() const
         return 1.0f;
     }
 
-    const float unitsPerPixel = camera_.worldUnitsPerPixelAt(object->worldBounds().center());
+    const float unitsPerPixel = camera_.worldUnitsPerPixelAt(selectedObjectWorldOrigin());
     if (transformMode_ == TransformMode::Rotate) {
         return qMax(0.75f, unitsPerPixel * 110.0f);
     }
 
     return qMax(0.75f, unitsPerPixel * 90.0f);
+}
+
+void ViewportWidget::notifyBeforeSceneMutation()
+{
+    if (!suppressBeforeSceneMutationCallback_ && beforeSceneMutationCallback_) {
+        beforeSceneMutationCallback_();
+    }
 }
 
 void ViewportWidget::applyDrag(const QPoint& currentPosition)
@@ -827,9 +964,17 @@ void ViewportWidget::applyDrag(const QPoint& currentPosition)
         transform.scale = scale;
     }
 
+    if (!dragState_.historyCaptured) {
+        notifyBeforeSceneMutation();
+        dragState_.historyCaptured = true;
+    }
+
+    suppressBeforeSceneMutationCallback_ = true;
     if (!setObjectLocalTransform(selectedObjectId_, transform)) {
+        suppressBeforeSceneMutationCallback_ = false;
         return;
     }
+    suppressBeforeSceneMutationCallback_ = false;
 
     if (objectTransformChangedCallback_) {
         objectTransformChangedCallback_(selectedObjectId_);

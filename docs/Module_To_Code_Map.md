@@ -44,6 +44,8 @@ Nang nhat hien tai nam o:
 * [apps/editor/main.cpp](</E:/Animation Software/apps/editor/main.cpp>)
 * [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h>)
 * [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [apps/editor/include/MainWindowContexts.h](</E:/Animation Software/apps/editor/include/MainWindowContexts.h>)
+* [apps/editor/src/MainWindowContexts.cpp](</E:/Animation Software/apps/editor/src/MainWindowContexts.cpp>)
 * [apps/editor/include/ScriptCommandSystem.h](</E:/Animation Software/apps/editor/include/ScriptCommandSystem.h>)
 * [apps/editor/src/ScriptCommandSystem.cpp](</E:/Animation Software/apps/editor/src/ScriptCommandSystem.cpp>)
 * [src/logging/LogCategories.h](</E:/Animation Software/src/logging/LogCategories.h>)
@@ -54,8 +56,9 @@ Nang nhat hien tai nam o:
 `Core` hien dang gom:
 
 * app bootstrap
-* main window lifecycle
+* `EditorShell` lifecycle
 * menu / toolbar / dock wiring
+* context and dependency composition
 * script command registry
 * command routing tu UI vao scene actions
 * editor history state cho undo/redo
@@ -64,13 +67,14 @@ Nang nhat hien tai nam o:
 ### Notes
 
 `Core` hien tai chua nam thanh mot folder rieng.
-Phan lon dang song trong `MainWindow`.
+Phan lon dang song trong `apps/editor`, voi `MainWindow` la adapter shell trung tam.
 
 Dieu nay co nghia:
 
 * `Core` da ton tai ve mat `module`
 * nhung `interface` hien tai van dang kha rong
-* `MainWindow` dang giu ca orchestration, UI, va mot phan workflow policy
+* trong docs, nen goi `module` nay la `EditorShell`
+* `MainWindow` thuoc `Core/Application`, khong nen duoc doc nhu feature module host
 
 ---
 
@@ -347,7 +351,8 @@ Neu map ngan gon 6 `module` vao code hien tai:
 Trong giai doan hien tai, team nen doc code voi cach hieu sau:
 
 * `src/scene` = canonical domain home, dang chua ca `Scene`, `Animation`, `Rigging`
-* `apps/editor` = `Core` workflow surface va mot phan `Engine`
+* `apps/editor` = `Core/Application` workflow surface va mot phan `Engine`
+* `MainWindow` + `MainWindowContexts` = concrete adapter cua `EditorShell`
 * `src/rendering` + `src/viewport` = `Rendering`
 * `src/io` = adapter layer cap du lieu cho cac `module` domain
 

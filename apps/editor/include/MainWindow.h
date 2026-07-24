@@ -7,7 +7,20 @@
 #include <cstdint>
 
 #include "EditorAnimationController.h"
+#include "EditorAnimationFlowController.h"
+#include "EditorChannelBoxController.h"
+#include "EditorCreationController.h"
+#include "EditorDocumentController.h"
 #include "EditorHistoryController.h"
+#include "EditorInspectorController.h"
+#include "EditorFileFlowController.h"
+#include "EditorOutlinerController.h"
+#include "EditorRiggingController.h"
+#include "EditorSceneMutationController.h"
+#include "EditorScriptExecutionController.h"
+#include "EditorSelectionController.h"
+#include "EditorViewportCommandController.h"
+#include "EditorViewportUiController.h"
 #include "ScriptCommandSystem.h"
 #include "scene/PrimitiveMeshFactory.h"
 #include "scene/Scene.h"
@@ -61,8 +74,27 @@ private:
         Bottom
     };
     void createMenus();
+    void createEditMenu();
+    void createFileMenu();
+    void createCreateMenu();
+    void createRigMenu();
+    void createWindowsMenu();
+    void createAnimationMenu();
+    void createViewMenu();
+    void createTransformMenu();
     void createToolbar();
+    void addImportCreateToolbarSection();
+    void addRigToolbarSection();
+    void addViewToolbarSection();
+    void addTransformToolbarSection();
+    void addDisplayToolbarSection();
     void createDocks();
+    void createOutlinerDock();
+    void createInspectorDock();
+    void createPrimitivePaletteDock();
+    void createScriptEditorDock();
+    void createTimelineDock();
+    QWidget* createPrimitivePalettePanel();
     QWidget* createOutlinerPanel();
     QWidget* createInspectorPanel();
     QWidget* createTimeSliderPanel();
@@ -79,8 +111,12 @@ private:
     bool archiveScene();
     bool exportAll();
     bool exportSelection();
+    void optimizeSceneStorage();
     void savePreferences();
     void loadPreferences();
+    void handlePrimitivePaletteItemActivated(QListWidgetItem* item);
+    void setInteractivePrimitiveCreationEnabled(bool enabled);
+    void setExitPrimitiveToolOnCompletionEnabled(bool enabled);
     void createPrimitiveFromPalette();
     void createJoint();
     void markSelectionAsHierarchyParent();
@@ -96,34 +132,40 @@ private:
     void executeScriptEditorAll();
     void executeScriptEditorSelection();
     void clearScriptHistory();
-    void appendScriptHistoryLine(const QString& line);
-    void appendScriptComment(const QString& line);
     bool executeScriptCommand(QString commandLine, QString* resultLine = nullptr);
     ScriptCommandContext createScriptCommandContext();
+    EditorCreationController::ScriptBindings createCreationScriptBindings();
+    EditorSceneMutationController::ScriptBindings createSceneScriptBindings();
     std::uint64_t findObjectIdByName(const QString& objectName) const;
     QString generateUniqueScriptName(const QString& prefix) const;
     QString generateUniqueObjectName(const QString& baseName, std::uint64_t ignoreObjectId = 0) const;
-    void logPrimitiveCreationToScriptEditor(PrimitiveMeshFactory::Type type, const QString& objectName);
-    void logSelectionToScriptEditor(std::uint64_t objectId);
-    void logChannelBoxChangeToScriptEditor(const Transform& transform);
-    void logVisibilityChangeToScriptEditor(bool visible);
     void refreshScenePanels();
+    void restoreSelectionAfterSceneRefresh(std::uint64_t objectId, bool syncOutliner);
+    void replaceSceneAndRestoreSelection(const Scene& scene, std::uint64_t objectId, bool syncOutliner);
     void populateOutliner();
-    void populateOutlinerItem(QTreeWidgetItem* parentItem, std::uint64_t objectId);
-    bool shouldPromoteOutlinerNode(std::uint64_t objectId) const;
     void updateInspector(std::uint64_t objectId);
     void clearInspector();
     void handleOutlinerSelectionChanged();
     void frameSelectedObject();
     void selectObject(std::uint64_t objectId, bool syncOutliner);
-    void syncOutlinerSelection(std::uint64_t objectId);
     EditorAnimationTimelineViewModel buildAnimationTimelineViewModel() const;
+    void resetSceneCamera();
+    void frameEntireScene();
+    void setWireframeDisplayEnabled(bool enabled);
+    void setAxisVisibilityEnabled(bool enabled);
+    void setBackfaceCullingEnabled(bool enabled);
     void setViewCameraPreset(ViewCameraUiPreset preset);
     void setTransformUiMode(TransformUiMode mode);
     void setAxisUiOrientation(AxisUiOrientation orientation);
     void restoreDefaultWorkspaceLayout();
     void showPolygonPrimitivesWindow();
     void updateWindowTitle();
+    void applyDocumentSceneLoad(const Scene& scene, const QString& filePath, bool frameScene);
+    bool showDocumentOperationFailure(
+        const QString& dialogTitle,
+        const QString& errorMessage,
+        const QString& statusMessage,
+        int timeoutMs = 3000);
     void applyAnimationState(const EditorAnimationState& state, bool logToScript = false);
     void syncPlaybackTimer();
     void setCurrentFrame(int frame, bool logToScript = true);
@@ -143,6 +185,25 @@ private:
     void applyChannelBoxToSelection();
     void applyJointOrientationToSelection();
     void applyVisibilityToSelection(bool visible);
+    EditorInspectorController::InspectorWidgets inspectorWidgets() const;
+    EditorInspectorController::InspectorActions inspectorActions() const;
+    EditorChannelBoxController::Context channelBoxContext() const;
+    EditorCreationController::Context creationContext() const;
+    EditorOutlinerController::SceneAccess outlinerSceneAccess() const;
+    EditorRiggingController::Context riggingContext() const;
+    EditorScriptExecutionController::ExecutionContext scriptExecutionContext();
+    EditorSelectionController::Context selectionContext() const;
+    EditorViewportUiController::ActionSet viewportUiActions() const;
+    bool showErrorMessageIfPresent(const QString& errorMessage, int timeoutMs = 1500);
+    void appendScriptResultLogLines(const QString& commentLine, const QString& commandLine, const QString& resultLine);
+    void showStatusMessageIfPresent(const QString& statusMessage, int timeoutMs);
+    void applyFileFlowResult(const EditorFileFlowController::OperationResult& result, bool logToScript = true, int timeoutMs = 3000);
+    EditorAnimationFlowController::Context animationFlowContext() const;
+    void applyAnimationFlowResult(const EditorAnimationFlowController::OperationResult& result);
+    void applyCreationResult(const EditorCreationController::OperationResult& result);
+    void applyRiggingOperationResult(const EditorRiggingController::OperationResult& result, bool logToScript = true);
+    void applyChannelBoxOperationResult(const EditorChannelBoxController::OperationResult& result);
+    void applyViewportUiOperationResult(const EditorViewportUiController::OperationResult& result, int timeoutMs = 1500);
     PrimitiveMeshFactory::Type primitiveTypeFromItem(const QListWidgetItem* item) const;
     void restoreHistoryState(const EditorHistoryState& state);
     void recordUndoState();

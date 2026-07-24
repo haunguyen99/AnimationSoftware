@@ -315,6 +315,21 @@ bool ScriptCommandRegistry::execute(QString commandLine, const ScriptCommandCont
         return true;
     }
 
+    if (command == "bindSkin") {
+        if (tokens.size() < 3) {
+            result.resultLine = "// Error: bindSkin requires mesh and joint names //";
+            return true;
+        }
+
+        const QString meshName = stripQuotes(tokens.at(1));
+        const QString jointName = stripQuotes(tokens.at(2));
+        const bool bound = context.bindSkin && context.bindSkin(meshName, jointName);
+        result.resultLine = bound
+            ? QString("// Result: bound %1 to %2 //").arg(meshName, jointName)
+            : "// Error: bindSkin failed //";
+        return true;
+    }
+
     if (command == "currentTime") {
         if (tokens.size() < 2) {
             result.resultLine = "// Error: invalid currentTime syntax //";
@@ -416,6 +431,63 @@ bool ScriptCommandRegistry::execute(QString commandLine, const ScriptCommandCont
         result.resultLine = hasFrame
             ? QString("// Result: deleted key on %1 at frame %2 //").arg(objectName).arg(frame)
             : QString("// Result: deleted key on %1 //").arg(objectName);
+        return true;
+    }
+
+    if (command == "copyKey") {
+        if (tokens.size() < 2) {
+            result.resultLine = "// Error: copyKey requires an object name //";
+            return true;
+        }
+
+        const QString objectName = stripQuotes(tokens.at(1));
+        const int timeIndex = tokens.indexOf("-t");
+        const int toIndex = tokens.indexOf("-to");
+        if (timeIndex < 0 || timeIndex + 1 >= tokens.size() || toIndex < 0 || toIndex + 1 >= tokens.size()) {
+            result.resultLine = "// Error: copyKey requires -t and -to //";
+            return true;
+        }
+
+        bool okSource = false;
+        bool okTarget = false;
+        const int sourceFrame = tokens.at(timeIndex + 1).toInt(&okSource);
+        const int targetFrame = tokens.at(toIndex + 1).toInt(&okTarget);
+        if (!okSource || !okTarget) {
+            result.resultLine = "// Error: invalid copyKey frame value //";
+            return true;
+        }
+
+        const bool copied = context.copyKeyframe && context.copyKeyframe(objectName, sourceFrame, targetFrame);
+        result.resultLine = copied
+            ? QString("// Result: copied key on %1 from frame %2 to %3 //").arg(objectName).arg(sourceFrame).arg(targetFrame)
+            : "// Error: copyKey failed //";
+        return true;
+    }
+
+    if (command == "shiftKey") {
+        if (tokens.size() < 2) {
+            result.resultLine = "// Error: shiftKey requires an object name //";
+            return true;
+        }
+
+        const QString objectName = stripQuotes(tokens.at(1));
+        const int byIndex = tokens.indexOf("-by");
+        if (byIndex < 0 || byIndex + 1 >= tokens.size()) {
+            result.resultLine = "// Error: shiftKey requires -by //";
+            return true;
+        }
+
+        bool ok = false;
+        const int frameDelta = tokens.at(byIndex + 1).toInt(&ok);
+        if (!ok) {
+            result.resultLine = "// Error: invalid shiftKey delta //";
+            return true;
+        }
+
+        const bool shifted = context.shiftKeyframes && context.shiftKeyframes(objectName, frameDelta);
+        result.resultLine = shifted
+            ? QString("// Result: shifted keys on %1 by %2 //").arg(objectName).arg(frameDelta)
+            : "// Error: shiftKey failed //";
         return true;
     }
 

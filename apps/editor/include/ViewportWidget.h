@@ -3,6 +3,7 @@
 #include <QOpenGLFunctions_3_3_Core>
 #include <QOpenGLWidget>
 #include <QPoint>
+#include <QString>
 
 #include <functional>
 
@@ -26,12 +27,25 @@ public:
         World,
         Local
     };
+    enum class CameraViewPreset
+    {
+        Perspective,
+        Front,
+        Back,
+        Left,
+        Right,
+        Top,
+        Bottom
+    };
 
     explicit ViewportWidget(QWidget* parent = nullptr);
 
     const Scene& scene() const;
     void requestRender();
     void resetCamera();
+    void setCameraViewPreset(CameraViewPreset preset);
+    CameraViewPreset cameraViewPreset() const;
+    QString cameraViewLabel() const;
     void frameScene();
     void frameObject(SceneObject::Id objectId);
     void setSelectedObject(SceneObject::Id objectId);
@@ -39,12 +53,14 @@ public:
     void setWireframeEnabled(bool enabled);
     void setAxisVisible(bool visible);
     void setBackfaceCullingEnabled(bool enabled);
+    void setSelectionOutlineVisible(bool visible);
     void setTransformMode(TransformMode mode);
     TransformMode transformMode() const;
     void setAxisOrientation(AxisOrientation orientation);
     AxisOrientation axisOrientation() const;
     void setSelectionChangedCallback(std::function<void(SceneObject::Id)> callback);
     void setObjectTransformChangedCallback(std::function<void(SceneObject::Id)> callback);
+    void setBeforeSceneMutationCallback(std::function<void()> callback);
     void setAutoKeyEnabled(bool enabled);
     bool autoKeyEnabled() const;
     bool importFbx(const QString& filePath);
@@ -87,6 +103,7 @@ private:
     struct DragState
     {
         bool active = false;
+        bool historyCaptured = false;
         QPoint startMousePosition;
         Transform startTransform;
         QVector3D gizmoOrigin;
@@ -104,8 +121,11 @@ private:
     QVector<QVector3D> gizmoAxesWorld() const;
     QVector3D gizmoAxisDirectionWorld(GizmoAxis axis) const;
     QMatrix4x4 parentWorldTransform() const;
+    QVector3D selectedObjectWorldOrigin() const;
+    QString cameraViewLabelText() const;
     QVector3D gizmoOrigin() const;
     float gizmoSize() const;
+    void notifyBeforeSceneMutation();
     void applyDrag(const QPoint& currentPosition);
     void handleHotkeys(QMouseEvent* event);
 
@@ -128,5 +148,7 @@ private:
     DragState dragState_;
     std::function<void(SceneObject::Id)> selectionChangedCallback_;
     std::function<void(SceneObject::Id)> objectTransformChangedCallback_;
+    std::function<void()> beforeSceneMutationCallback_;
     bool autoKeyEnabled_ = false;
+    bool suppressBeforeSceneMutationCallback_ = false;
 };

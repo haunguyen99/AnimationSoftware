@@ -2,7 +2,7 @@
 
 ## Status
 
-`Step 3 - Implementation In Progress`
+`Step 3 - Complete`
 
 Design source:
 
@@ -11,13 +11,14 @@ Design source:
 Gate status:
 
 * core implementation da vao code
-* `phase 1` da build + `ctest` pass
-* con manual QA va quyet dinh co can `phase 2` polish hay khong
+* build + `ctest` pass
+* manual QA pass
+* feature co the khoa de chuyen trong tam sang `v0.5`
 
 Progress snapshot:
 
-* done: `Task 1` -> `Task 9` o muc `phase 1`
-* con mo: polish orientation rules nang cao va manual QA trong app
+* done: `Task 1` -> `Task 9`
+* closed: manual QA pass theo checklist `v0.4`
 
 ---
 
@@ -285,10 +286,6 @@ Risk control:
 
 ## Next Step After This Plan
 
-Neu plan nay duoc duyet:
-
-* vao `Step 3 - Implementation` cho `Rigging Foundation v0.4`
-
-Feature tiep theo sau khi xong item nay:
+Feature tiep theo:
 
 * `v0.5 Skinning`

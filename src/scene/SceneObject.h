@@ -9,6 +9,15 @@
 #include "scene/Bounds3D.h"
 #include "scene/Transform.h"
 
+struct SkinWeight
+{
+    std::uint64_t jointId = 0;
+    float weight = 0.0f;
+};
+
+using VertexSkinWeights = QVector<SkinWeight>;
+using SkinWeightTable = QVector<VertexSkinWeights>;
+
 class SceneObject
 {
 public:
@@ -47,12 +56,25 @@ public:
     void setBindPoseLocalTransform(const Transform& transform);
     bool hasBindPose() const;
     void setHasBindPose(bool hasBindPose);
+    bool hasSkinBinding() const;
+    void setHasSkinBinding(bool hasSkinBinding);
+    const Transform& skinBindLocalTransform() const;
+    void setSkinBindLocalTransform(const Transform& transform);
+    const QVector<Id>& skinJointIds() const;
+    void setSkinJointIds(const QVector<Id>& jointIds);
+    const SkinWeightTable& skinWeights() const;
+    void setSkinWeights(const SkinWeightTable& weights);
+    void clearSkinBinding();
     bool hasAnimation() const;
     bool hasTransformKeyframe(int frame) const;
     const TransformKeyframeTrack& transformKeyframes() const;
     void setTransformKeyframes(const TransformKeyframeTrack& keyframes);
     void setTransformKeyframe(int frame, const Transform& transform);
     bool removeTransformKeyframe(int frame);
+    bool duplicateTransformKeyframe(int sourceFrame, int targetFrame);
+    bool offsetAllTransformKeyframes(int frameDelta);
+    int nextTransformKeyframeAfter(int frame) const;
+    int previousTransformKeyframeBefore(int frame) const;
 
     const Bounds3D& localBounds() const;
     void setLocalBounds(const Bounds3D& bounds);
@@ -78,6 +100,10 @@ private:
     QQuaternion jointOrientation_ { 1.0f, 0.0f, 0.0f, 0.0f };
     Transform bindPoseLocalTransform_;
     bool hasBindPose_ = false;
+    bool hasSkinBinding_ = false;
+    Transform skinBindLocalTransform_;
+    QVector<Id> skinJointIds_;
+    SkinWeightTable skinWeights_;
     TransformKeyframeTrack transformKeyframes_;
     Bounds3D localBounds_;
     Bounds3D worldBounds_;

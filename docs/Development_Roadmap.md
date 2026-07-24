@@ -8,7 +8,7 @@ It is intended to be more accurate than the older high-level milestone image and
 
 ## Current Position
 
-Project Phoenix has completed `v0.3 Animation Data Foundation` and is now in `v0.4 Rigging Foundation phase 1`.
+Project Phoenix has completed `v0.5 Skinning` and is now ready to move into `v0.6 Animation Tools`.
 
 The project already includes:
 
@@ -115,11 +115,10 @@ Exit criteria:
 - A user can create and edit a valid skeleton hierarchy in the editor.
 
 Status:
-- In progress
+- Completed
 
 Notes:
-- `v0.4 phase 1` already includes joint data, hierarchy editing, viewport skeleton draw, orientation basics, bind pose capture, and scene serialization.
-- The remaining work is mostly manual QA and deciding whether a small `phase 2` polish pass is needed before moving to `v0.5`.
+- completed with joint data, hierarchy editing, viewport skeleton draw, orientation basics, bind pose capture, scene serialization, automated tests, and manual QA pass.
 
 ### v0.5 Skinning
 
@@ -137,7 +136,10 @@ Exit criteria:
 - A skinned mesh deforms from joint animation in the viewport.
 
 Status:
-- Not started
+- Completed
+
+Notes:
+- completed with skin data, bind workflow, serialization, deformation runtime, bind UI/command, weight normalization, automated tests, and runtime QA pass.
 
 ### v0.6 Animation Tools
 
@@ -155,7 +157,11 @@ Exit criteria:
 - A user can edit animation timing and pose data without relying on raw transform edits only.
 
 Status:
-- Not started
+- In progress
+
+Notes:
+- roadmap da khoa theo huong phase-based, trong do `Phase 1` uu tien `key editing / timing` truoc `Dope Sheet` hay `Constraints`.
+- slice dau da vao code: `duplicate key`, `shift keys`, `previous/next key`.
 
 ### v0.7 Graph Editor
 
@@ -234,12 +240,13 @@ Status:
 
 The best next engineering sequence is:
 
-1. Manual QA the current `v0.4 phase 1` hierarchy and orientation workflow.
-2. Decide whether `v0.4` needs a short polish phase for richer orientation rules or socket-style parenting.
-3. Connect the rig hierarchy to future skinning work.
+1. Implement `v0.6 Phase 1 - Key Editing Core`.
+2. Add timeline range foundation only toi muc can cho key ops.
+3. Revisit skinning polish later if production usage demands it.
 
 ## Notes For Planning
 
 - The editor shell is advancing slightly ahead of the original roadmap because tooling such as the Script Editor and command system has already started.
 - This is acceptable, because those systems will support animation, automation, undo/redo, and plugin workflows later.
-- The next major product gap after `v0.4 phase 1` is skinning: skeleton authoring now exists, but mesh deformation does not.
+- Next major product gap is animation tooling depth: mesh deformation now exists, but richer key editing and timing tools do not.
+- `v0.6` nen duoc cat nho theo phase; `Constraints`, `Mirror Animation`, va `Graph Editor` khong nen vao phase dau.

@@ -19,6 +19,7 @@ struct ViewportRenderOptions
     bool showAxis = true;
     bool wireframe = false;
     bool backfaceCulling = false;
+    bool showSelectionOutline = true;
 };
 
 class ViewportRenderer
@@ -50,6 +51,7 @@ public:
     };
 
 private:
+    void destroyGlResources();
     void createSceneGeometry();
     void uploadGeometry();
     void uploadImportedMesh(const Scene& scene);

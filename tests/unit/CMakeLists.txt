@@ -30,11 +30,25 @@ add_executable(editor_ui_tests
     EditorUiTests.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/AnimationTimelinePanel.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorAnimationController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorAnimationFlowController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorChannelBoxController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorCreationController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorDocumentController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorFileFlowController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorHistoryController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorInspectorController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorOutlinerController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorRiggingController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorSceneQueryController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorSelectionController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorScriptExecutionController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorScriptLogController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorViewportUiController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorSceneMutationController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorViewportCommandController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/KeyframeTimelineWidget.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/MainWindow.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/MainWindowContexts.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/ScriptCommandSystem.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/ViewportWidget.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/ViewportWorkspaceWidget.cpp

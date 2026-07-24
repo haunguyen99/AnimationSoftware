@@ -8,6 +8,7 @@
 
 #include "io/PhoenixSceneDocument.h"
 #include "scene/Bounds3D.h"
+#include "scene/MeshData.h"
 #include "scene/Scene.h"
 
 namespace
@@ -110,17 +111,50 @@ int main()
         return fail("set keyframe at frame 10 failed");
     }
 
+    const SceneObject* animatedObject = nullptr;
+    if (!animationScene.duplicateObjectKeyframe(animatedId, 10, 11)) {
+        return fail("duplicate keyframe failed");
+    }
+
+    animatedObject = animationScene.findObject(animatedId);
+    if (animatedObject == nullptr || !animatedObject->hasTransformKeyframe(11)) {
+        return fail("duplicated keyframe missing");
+    }
+
+    if (animationScene.previousObjectKeyframe(animatedId, 11) != 10) {
+        return fail("previous keyframe lookup wrong");
+    }
+
+    if (animationScene.nextObjectKeyframe(animatedId, 10) != 11) {
+        return fail("next keyframe lookup wrong");
+    }
+
+    if (!animationScene.offsetObjectKeyframes(animatedId, 2)) {
+        return fail("offset keyframes failed");
+    }
+
+    animatedObject = animationScene.findObject(animatedId);
+    if (animatedObject == nullptr) {
+        return fail("animated object missing after key offset");
+    }
+
+    if (!animatedObject->hasTransformKeyframe(2)
+            || !animatedObject->hasTransformKeyframe(12)
+            || !animatedObject->hasTransformKeyframe(13)) {
+        return fail("offset keyframes wrong frames");
+    }
+
     animationScene.setCurrentFrame(5);
-    const SceneObject* animatedObject = animationScene.findObject(animatedId);
+    animatedObject = animationScene.findObject(animatedId);
     if (animatedObject == nullptr) {
         return fail("animated object missing");
     }
 
-    if (!fuzzyCompare(animatedObject->localTransform().translation, QVector3D(5.0f, 2.0f, -1.0f))) {
+    if (!fuzzyCompare(animatedObject->localTransform().translation, QVector3D(3.0f, 1.2f, -0.6f))) {
         return fail("animated translation interpolation wrong");
     }
 
-    if (!fuzzyCompare(animatedObject->localTransform().scale, QVector3D(1.5f, 2.0f, 2.5f))) {
+    if (!fuzzyCompare(animatedObject->localTransform().scale, QVector3D(1.3f, 1.6f, 1.9f))) {
         return fail("animated scale interpolation wrong");
     }
 
@@ -263,6 +297,154 @@ int main()
 
     if (loadedRoot->jointOrientation().isIdentity()) {
         return fail("loaded joint orientation missing");
+    }
+
+    Scene skinScene;
+    const SceneObject::Id skinRootId = skinScene.createJoint("skin_root");
+    const SceneObject::Id skinChildId = skinScene.createJoint("skin_child", skinRootId);
+    const SceneObject::Id meshObjectId = skinScene.createObject("mesh");
+    SceneObject* meshObject = skinScene.findObject(meshObjectId);
+    if (meshObject == nullptr) {
+        return fail("skin mesh object missing");
+    }
+
+    MeshData meshData;
+    meshData.positions = {
+        QVector3D(0.0f, 0.0f, 0.0f),
+        QVector3D(1.0f, 0.0f, 0.0f),
+        QVector3D(0.0f, 1.0f, 0.0f)
+    };
+    meshData.indices = { 0, 1, 2 };
+    meshData.bounds = Bounds3D::fromMinMax(QVector3D(0.0f, 0.0f, 0.0f), QVector3D(1.0f, 1.0f, 0.0f));
+    meshObject->addMeshHandle(skinScene.addMesh(meshData));
+    meshObject->setLocalBounds(meshData.bounds);
+    skinScene.rebuildWorldData();
+
+    if (!skinScene.bindObjectToSkeleton(meshObjectId, skinRootId)) {
+        return fail("bind object to skeleton failed");
+    }
+
+    const SceneObject* autoSkinnedMeshObject = skinScene.findObject(meshObjectId);
+    if (autoSkinnedMeshObject == nullptr || !autoSkinnedMeshObject->hasSkinBinding()) {
+        return fail("auto skin binding missing");
+    }
+
+    if (autoSkinnedMeshObject->skinJointIds().size() != 2 || autoSkinnedMeshObject->skinWeights().size() != 3) {
+        return fail("auto skin binding wrong size");
+    }
+
+    for (const VertexSkinWeights& vertexWeights : autoSkinnedMeshObject->skinWeights()) {
+        if (vertexWeights.size() != 1 || !fuzzyCompare(vertexWeights.first().weight, 1.0f)) {
+            return fail("auto skin binding should seed rigid weights");
+        }
+    }
+
+    const SkinWeightTable weights = {
+        VertexSkinWeights { SkinWeight { skinRootId, 1.0f } },
+        VertexSkinWeights { SkinWeight { skinRootId, 0.5f }, SkinWeight { skinChildId, 0.5f } },
+        VertexSkinWeights { SkinWeight { skinChildId, 1.0f } }
+    };
+    if (!skinScene.setObjectSkinBinding(meshObjectId, { skinRootId, skinChildId }, weights)) {
+        return fail("set skin binding failed");
+    }
+
+    const SceneObject* skinnedMeshObject = skinScene.findObject(meshObjectId);
+    if (skinnedMeshObject == nullptr || !skinnedMeshObject->hasSkinBinding()) {
+        return fail("skin binding missing after set");
+    }
+
+    const SkinWeightTable unnormalizedWeights = {
+        VertexSkinWeights { SkinWeight { skinRootId, 0.25f }, SkinWeight { skinRootId, 0.25f }, SkinWeight { skinChildId, 0.5f } },
+        VertexSkinWeights { SkinWeight { skinRootId, 2.0f }, SkinWeight { skinChildId, 1.0f } },
+        VertexSkinWeights { SkinWeight { skinChildId, 0.9999f }, SkinWeight { skinRootId, 0.00001f } }
+    };
+    if (!skinScene.setObjectSkinBinding(meshObjectId, { skinRootId, skinChildId }, unnormalizedWeights)) {
+        return fail("set unnormalized skin binding failed");
+    }
+
+    skinnedMeshObject = skinScene.findObject(meshObjectId);
+    if (skinnedMeshObject == nullptr) {
+        return fail("skinned mesh object missing after normalization test");
+    }
+
+    for (const VertexSkinWeights& vertexWeights : skinnedMeshObject->skinWeights()) {
+        float weightSum = 0.0f;
+        for (const SkinWeight& weight : vertexWeights) {
+            weightSum += weight.weight;
+        }
+
+        if (!fuzzyCompare(weightSum, 1.0f)) {
+            return fail("normalized skin weights should sum to one");
+        }
+    }
+
+    if (skinnedMeshObject->skinWeights().at(0).size() != 2) {
+        return fail("duplicate joint weights should merge");
+    }
+
+    if (skinnedMeshObject->skinWeights().at(2).size() != 1) {
+        return fail("tiny skin weights should be pruned");
+    }
+
+    if (!fuzzyCompare(skinnedMeshObject->skinWeights().at(1).at(0).weight, 2.0f / 3.0f)) {
+        return fail("unnormalized weight should be renormalized");
+    }
+
+    if (!skinScene.setObjectSkinBinding(meshObjectId, { skinRootId, skinChildId }, weights)) {
+        return fail("restore normalized skin binding failed");
+    }
+
+    const QString skinScenePath = tempDir.filePath("skin_scene.phoenixscene");
+    if (!PhoenixSceneDocument::saveToFile(skinScene, skinScenePath, &saveError)) {
+        std::cerr << saveError.toStdString() << '\n';
+        return fail("save skin scene failed");
+    }
+
+    const PhoenixSceneDocument::LoadResult skinLoadResult = PhoenixSceneDocument::loadFromFile(skinScenePath);
+    if (!skinLoadResult.success) {
+        std::cerr << skinLoadResult.errorMessage.toStdString() << '\n';
+        return fail("load skin scene failed");
+    }
+
+    const Scene loadedSkinScene = skinLoadResult.scene;
+    const SceneObject* loadedMeshObject = nullptr;
+    for (SceneObject::Id objectId : loadedSkinScene.allObjectIds()) {
+        const SceneObject* object = loadedSkinScene.findObject(objectId);
+        if (object != nullptr && object->name() == "mesh") {
+            loadedMeshObject = object;
+            break;
+        }
+    }
+
+    if (loadedMeshObject == nullptr || !loadedMeshObject->hasSkinBinding()) {
+        return fail("loaded skin binding missing");
+    }
+
+    if (loadedMeshObject->skinJointIds().size() != 2 || loadedMeshObject->skinWeights().size() != 3) {
+        return fail("loaded skin binding data wrong size");
+    }
+
+    if (loadedMeshObject->skinWeights().at(1).size() != 2) {
+        return fail("loaded skin vertex weights wrong");
+    }
+
+    Transform movedSkinChildTransform = skinScene.findObject(skinChildId)->localTransform();
+    movedSkinChildTransform.translation += QVector3D(2.0f, 0.0f, 0.0f);
+    if (!skinScene.setLocalTransform(skinChildId, movedSkinChildTransform)) {
+        return fail("move skin child joint failed");
+    }
+
+    MeshData deformedMesh;
+    if (!skinScene.buildDeformedMesh(meshObjectId, skinnedMeshObject->meshHandles().first(), &deformedMesh)) {
+        return fail("build deformed mesh failed");
+    }
+
+    if (deformedMesh.positions.size() != meshData.positions.size()) {
+        return fail("deformed mesh vertex count wrong");
+    }
+
+    if (!fuzzyCompare(deformedMesh.positions.at(2), QVector3D(2.0f, 1.0f, 0.0f))) {
+        return fail("child-weighted vertex did not deform as expected");
     }
 
     return EXIT_SUCCESS;
