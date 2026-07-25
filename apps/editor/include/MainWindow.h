@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include "EditorAnimationController.h"
+#include "EditorAnimationEngineFacade.h"
 #include "EditorAnimationFlowController.h"
 #include "EditorChannelBoxController.h"
 #include "EditorCreationController.h"
@@ -15,8 +16,10 @@
 #include "EditorInspectorController.h"
 #include "EditorFileFlowController.h"
 #include "EditorOutlinerController.h"
+#include "EditorPlaybackController.h"
 #include "EditorRiggingController.h"
 #include "EditorSceneMutationController.h"
+#include "EditorSceneRuntimeController.h"
 #include "EditorScriptExecutionController.h"
 #include "EditorSelectionController.h"
 #include "EditorViewportCommandController.h"
@@ -43,7 +46,6 @@ class QListWidgetItem;
 class QPlainTextEdit;
 class QSpinBox;
 class QSlider;
-class QTimer;
 
 class MainWindow : public QMainWindow
 {
@@ -134,14 +136,13 @@ private:
     void clearScriptHistory();
     bool executeScriptCommand(QString commandLine, QString* resultLine = nullptr);
     ScriptCommandContext createScriptCommandContext();
+    EditorAnimationEngineFacade::ScriptBindings createAnimationScriptBindings();
     EditorCreationController::ScriptBindings createCreationScriptBindings();
     EditorSceneMutationController::ScriptBindings createSceneScriptBindings();
     std::uint64_t findObjectIdByName(const QString& objectName) const;
     QString generateUniqueScriptName(const QString& prefix) const;
     QString generateUniqueObjectName(const QString& baseName, std::uint64_t ignoreObjectId = 0) const;
     void refreshScenePanels();
-    void restoreSelectionAfterSceneRefresh(std::uint64_t objectId, bool syncOutliner);
-    void replaceSceneAndRestoreSelection(const Scene& scene, std::uint64_t objectId, bool syncOutliner);
     void populateOutliner();
     void updateInspector(std::uint64_t objectId);
     void clearInspector();
@@ -167,18 +168,12 @@ private:
         const QString& statusMessage,
         int timeoutMs = 3000);
     void applyAnimationState(const EditorAnimationState& state, bool logToScript = false);
-    void syncPlaybackTimer();
-    void setCurrentFrame(int frame, bool logToScript = true);
     void setKeyForSelection(bool logToScript = true);
     void deleteKeyForSelection(bool logToScript = true);
     void duplicateCurrentKeyForSelection(bool logToScript = true);
     void shiftSelectedObjectKeyframes(int frameDelta, bool logToScript = true);
     void setAutoKeyEnabled(bool enabled, bool logToScript = true);
-    void setPlaybackRange(int startFrame, int endFrame, bool logToScript = true);
-    void stepFrame(int delta);
     void jumpToSelectedObjectKeyframe(bool forward, bool logToScript = true);
-    void togglePlayback();
-    void advancePlayback();
     void updateChannelBox(std::uint64_t objectId);
     void refreshAnimationTimelineUi();
     void setChannelBoxEnabled(bool enabled);
@@ -191,6 +186,7 @@ private:
     EditorCreationController::Context creationContext() const;
     EditorOutlinerController::SceneAccess outlinerSceneAccess() const;
     EditorRiggingController::Context riggingContext() const;
+    EditorSceneRuntimeController::Context sceneRuntimeContext();
     EditorScriptExecutionController::ExecutionContext scriptExecutionContext();
     EditorSelectionController::Context selectionContext() const;
     EditorViewportUiController::ActionSet viewportUiActions() const;
@@ -198,7 +194,9 @@ private:
     void appendScriptResultLogLines(const QString& commentLine, const QString& commandLine, const QString& resultLine);
     void showStatusMessageIfPresent(const QString& statusMessage, int timeoutMs);
     void applyFileFlowResult(const EditorFileFlowController::OperationResult& result, bool logToScript = true, int timeoutMs = 3000);
+    EditorAnimationEngineFacade::Context animationEngineContext();
     EditorAnimationFlowController::Context animationFlowContext() const;
+    void applyAnimationEngineResult(const EditorAnimationEngineFacade::OperationResult& result);
     void applyAnimationFlowResult(const EditorAnimationFlowController::OperationResult& result);
     void applyCreationResult(const EditorCreationController::OperationResult& result);
     void applyRiggingOperationResult(const EditorRiggingController::OperationResult& result, bool logToScript = true);
@@ -223,7 +221,6 @@ private:
     QPlainTextEdit* scriptHistoryTextEdit_ = nullptr;
     QPlainTextEdit* scriptInputTextEdit_ = nullptr;
     AnimationTimelinePanel* animationTimelinePanel_ = nullptr;
-    QTimer* playbackTimer_ = nullptr;
     QWidget* inspectorDetailsWidget_ = nullptr;
     QLabel* inspectorEmptyStateLabel_ = nullptr;
     QLabel* channelObjectNameLabel_ = nullptr;
@@ -311,4 +308,5 @@ private:
     bool interactivePrimitiveCreationEnabled_ = true;
     bool exitPrimitiveToolOnCompletionEnabled_ = true;
     EditorHistoryController historyController_;
+    EditorPlaybackController playbackController_;
 };

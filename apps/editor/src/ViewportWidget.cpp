@@ -287,16 +287,7 @@ bool ViewportWidget::importFbx(const QString& filePath)
         return false;
     }
 
-    if (scene_.isEmpty()) {
-        notifyBeforeSceneMutation();
-        scene_ = result.scene;
-    } else {
-        notifyBeforeSceneMutation();
-        scene_.appendScene(result.scene);
-    }
-
-    syncSceneToRenderer();
-
+    EditorViewportSceneController::appendImportedScene(sceneControllerContext(), result.scene, !scene_.isEmpty());
     frameScene();
 
     lastImportSucceeded_ = true;
@@ -309,27 +300,17 @@ bool ViewportWidget::importFbx(const QString& filePath)
 
 void ViewportWidget::clearScene()
 {
-    notifyBeforeSceneMutation();
-    scene_.clear();
-    selectedObjectId_ = 0;
-    syncSceneToRenderer();
-    requestRender();
+    EditorViewportSceneController::clearScene(sceneControllerContext());
 }
 
 void ViewportWidget::replaceScene(const Scene& scene)
 {
-    scene_ = scene;
-    selectedObjectId_ = 0;
-    syncSceneToRenderer();
-    requestRender();
+    EditorViewportSceneController::replaceScene(sceneControllerContext(), scene);
 }
 
 void ViewportWidget::optimizeSceneStorage()
 {
-    notifyBeforeSceneMutation();
-    scene_.optimizeStorage();
-    syncSceneToRenderer();
-    requestRender();
+    EditorViewportSceneController::optimizeSceneStorage(sceneControllerContext());
 }
 
 QString ViewportWidget::lastImportMessage() const
@@ -344,26 +325,12 @@ bool ViewportWidget::lastImportSucceeded() const
 
 bool ViewportWidget::setObjectLocalTransform(SceneObject::Id objectId, const Transform& transform)
 {
-    notifyBeforeSceneMutation();
-    if (!scene_.setLocalTransform(objectId, transform, autoKeyEnabled_)) {
-        return false;
-    }
-
-    syncSceneToRenderer();
-    requestRender();
-    return true;
+    return EditorViewportSceneController::setObjectLocalTransform(sceneControllerContext(), objectId, transform);
 }
 
 bool ViewportWidget::setObjectVisibility(SceneObject::Id objectId, bool visible)
 {
-    notifyBeforeSceneMutation();
-    if (!scene_.setObjectVisible(objectId, visible)) {
-        return false;
-    }
-
-    syncSceneToRenderer();
-    requestRender();
-    return true;
+    return EditorViewportSceneController::setObjectVisibility(sceneControllerContext(), objectId, visible);
 }
 
 int ViewportWidget::currentFrame() const
@@ -373,125 +340,47 @@ int ViewportWidget::currentFrame() const
 
 void ViewportWidget::setCurrentFrame(int frame)
 {
-    scene_.setCurrentFrame(frame);
-    syncSceneToRenderer();
-    requestRender();
+    EditorViewportSceneController::setCurrentFrame(sceneControllerContext(), frame);
 }
 
 bool ViewportWidget::setObjectKeyframe(SceneObject::Id objectId, int frame)
 {
-    notifyBeforeSceneMutation();
-    if (!scene_.setObjectKeyframe(objectId, frame)) {
-        return false;
-    }
-
-    syncSceneToRenderer();
-    requestRender();
-    return true;
+    return EditorViewportSceneController::setObjectKeyframe(sceneControllerContext(), objectId, frame);
 }
 
 bool ViewportWidget::removeObjectKeyframe(SceneObject::Id objectId, int frame)
 {
-    notifyBeforeSceneMutation();
-    if (!scene_.removeObjectKeyframe(objectId, frame)) {
-        return false;
-    }
-
-    syncSceneToRenderer();
-    requestRender();
-    return true;
+    return EditorViewportSceneController::removeObjectKeyframe(sceneControllerContext(), objectId, frame);
 }
 
 bool ViewportWidget::setJointOrientation(SceneObject::Id objectId, const QQuaternion& orientation)
 {
-    notifyBeforeSceneMutation();
-    if (!scene_.setJointOrientation(objectId, orientation)) {
-        return false;
-    }
-
-    syncSceneToRenderer();
-    requestRender();
-    return true;
+    return EditorViewportSceneController::setJointOrientation(sceneControllerContext(), objectId, orientation);
 }
 
 bool ViewportWidget::resetJointOrientation(SceneObject::Id objectId)
 {
-    notifyBeforeSceneMutation();
-    if (!scene_.resetJointOrientation(objectId)) {
-        return false;
-    }
-
-    syncSceneToRenderer();
-    requestRender();
-    return true;
+    return EditorViewportSceneController::resetJointOrientation(sceneControllerContext(), objectId);
 }
 
 bool ViewportWidget::alignJointOrientationToChild(SceneObject::Id objectId)
 {
-    notifyBeforeSceneMutation();
-    if (!scene_.alignJointOrientationToChild(objectId)) {
-        return false;
-    }
-
-    syncSceneToRenderer();
-    requestRender();
-    return true;
+    return EditorViewportSceneController::alignJointOrientationToChild(sceneControllerContext(), objectId);
 }
 
 bool ViewportWidget::captureBindPose(SceneObject::Id objectId, bool recursive)
 {
-    notifyBeforeSceneMutation();
-    if (!scene_.captureBindPose(objectId, recursive)) {
-        return false;
-    }
-
-    syncSceneToRenderer();
-    requestRender();
-    return true;
+    return EditorViewportSceneController::captureBindPose(sceneControllerContext(), objectId, recursive);
 }
 
 SceneObject::Id ViewportWidget::createPrimitive(PrimitiveMeshFactory::Type type, const QString& name)
 {
-    if (!PrimitiveMeshFactory::isImplemented(type)) {
-        return 0;
-    }
-
-    const MeshData meshData = PrimitiveMeshFactory::createMesh(type);
-    if (meshData.positions.isEmpty() || meshData.indices.isEmpty() || !meshData.bounds.isValid()) {
-        return 0;
-    }
-
-    notifyBeforeSceneMutation();
-    const SceneObject::Id objectId = scene_.createObject(name.isEmpty() ? PrimitiveMeshFactory::displayName(type) : name);
-    SceneObject* object = scene_.findObject(objectId);
-    if (object == nullptr) {
-        return 0;
-    }
-
-    const int meshHandle = scene_.addMesh(meshData);
-    object->addMeshHandle(meshHandle);
-    object->setLocalBounds(meshData.bounds);
-    scene_.rebuildWorldData();
-
-    syncSceneToRenderer();
-
-    setSelectedObject(objectId);
-    requestRender();
-    return objectId;
+    return EditorViewportSceneController::createPrimitive(sceneControllerContext(), type, name);
 }
 
 SceneObject::Id ViewportWidget::createJoint(const QString& name, SceneObject::Id parentId)
 {
-    notifyBeforeSceneMutation();
-    const SceneObject::Id objectId = scene_.createJoint(name, parentId);
-    if (objectId == 0) {
-        return 0;
-    }
-
-    syncSceneToRenderer();
-    setSelectedObject(objectId);
-    requestRender();
-    return objectId;
+    return EditorViewportSceneController::createJoint(sceneControllerContext(), name, parentId);
 }
 
 void ViewportWidget::initializeGL()
@@ -899,6 +788,28 @@ float ViewportWidget::gizmoSize() const
     }
 
     return qMax(0.75f, unitsPerPixel * 90.0f);
+}
+
+EditorViewportSceneController::Context ViewportWidget::sceneControllerContext()
+{
+    EditorViewportSceneController::Context context {
+        scene_,
+        selectedObjectId_,
+    };
+    context.autoKeyEnabled = autoKeyEnabled_;
+    context.notifyBeforeSceneMutation = [this]() {
+        notifyBeforeSceneMutation();
+    };
+    context.syncSceneToRenderer = [this]() {
+        syncSceneToRenderer();
+    };
+    context.requestRender = [this]() {
+        requestRender();
+    };
+    context.setSelectedObject = [this](SceneObject::Id objectId) {
+        setSelectedObject(objectId);
+    };
+    return context;
 }
 
 void ViewportWidget::notifyBeforeSceneMutation()

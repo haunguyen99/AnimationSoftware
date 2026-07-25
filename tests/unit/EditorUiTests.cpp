@@ -15,6 +15,10 @@
 #include <QApplication>
 #include <QtTest>
 
+#include "EditorPlaybackController.h"
+#include "EditorAnimationEngineFacade.h"
+#include "EditorSceneRuntimeController.h"
+#include "EditorViewportSceneController.h"
 #include "MainWindow.h"
 #include "ScriptCommandSystem.h"
 #include "ViewportWorkspaceWidget.h"
@@ -49,6 +53,10 @@ private slots:
     void leftMouseDragReparentsOutlinerItems();
     void jointInspectorEditsOrientationAndCapturesBindPose();
     void timelineUiShowsKeyframeFeedback();
+    void playbackControllerRoutesTimeIntentsAndTicks();
+    void animationEngineFacadeAppliesKeyEditsAndScriptBindings();
+    void sceneRuntimeControllerAppliesSceneFrameAndSelection();
+    void viewportSceneControllerRoutesSceneMutations();
 
 private:
     void createCubeUpdatesOutlinerAndChannelBox();
@@ -1024,6 +1032,237 @@ void EditorUiTests::timelineUiShowsKeyframeFeedback()
     QTRY_COMPARE(setKeyButton->text(), QString("Key Selected"));
     QTRY_VERIFY(deleteKeyButton->isEnabled());
     QVERIFY(timelineStatusLabel->text().contains("frame 12 keyed"));
+}
+
+void EditorUiTests::playbackControllerRoutesTimeIntentsAndTicks()
+{
+    EditorPlaybackController controller;
+    EditorAnimationState state;
+    state.currentFrame = 5;
+    state.playbackStartFrame = 5;
+    state.playbackEndFrame = 7;
+
+    int applyCount = 0;
+    controller.bind(EditorPlaybackController::Context {
+        [&state]() {
+            return state;
+        },
+        [&state, &applyCount](const EditorAnimationFlowController::OperationResult& result) {
+            ++applyCount;
+            state = result.state;
+        },
+    });
+
+    controller.setCurrentFrame(6, false);
+    QCOMPARE(state.currentFrame, 6);
+
+    controller.stepFrame(1);
+    QCOMPARE(state.currentFrame, 7);
+
+    controller.togglePlayback();
+    QVERIFY(state.playing);
+
+    const int applyCountAfterToggle = applyCount;
+    QTRY_VERIFY(applyCount > applyCountAfterToggle);
+
+    controller.togglePlayback();
+    QVERIFY(!state.playing);
+}
+
+void EditorUiTests::animationEngineFacadeAppliesKeyEditsAndScriptBindings()
+{
+    Scene runtimeScene;
+    const SceneObject::Id objectId = runtimeScene.createObject("pCube1");
+
+    EditorAnimationState state;
+    state.currentFrame = 5;
+    state.playbackStartFrame = 0;
+    state.playbackEndFrame = 24;
+
+    int recordUndoCount = 0;
+    std::uint64_t selectedObjectId = 0;
+    bool selectedSyncOutliner = false;
+
+    const auto applyState = [&state, &runtimeScene](const EditorAnimationState& nextState) {
+        state = nextState;
+        runtimeScene.setCurrentFrame(nextState.currentFrame);
+    };
+
+    EditorAnimationEngineFacade::Context context;
+    context.flow.findObject = [&runtimeScene](std::uint64_t incomingObjectId) {
+        return runtimeScene.findObject(incomingObjectId);
+    };
+    context.flow.sceneSnapshot = [&runtimeScene]() {
+        return runtimeScene;
+    };
+    context.runtime.recordUndoState = [&recordUndoCount]() {
+        ++recordUndoCount;
+    };
+    context.runtime.animationState = [&state]() {
+        return state;
+    };
+    context.runtime.applyAnimationState = applyState;
+    context.runtime.replaceScene = [&runtimeScene](const Scene& scene) {
+        runtimeScene = scene;
+    };
+    context.runtime.refreshScenePanels = []() {};
+    context.runtime.containsObject = [&runtimeScene](std::uint64_t incomingObjectId) {
+        return runtimeScene.contains(incomingObjectId);
+    };
+    context.runtime.selectObject = [&selectedObjectId, &selectedSyncOutliner](std::uint64_t incomingObjectId, bool syncOutliner) {
+        selectedObjectId = incomingObjectId;
+        selectedSyncOutliner = syncOutliner;
+    };
+    context.runtime.clearInspector = [&selectedObjectId]() {
+        selectedObjectId = 0;
+    };
+    context.runtime.frameScene = []() {};
+    context.animationState = [&state]() {
+        return state;
+    };
+    context.applyAnimationState = applyState;
+
+    const EditorAnimationEngineFacade::OperationResult setKeyResult =
+        EditorAnimationEngineFacade::setKeyForSelection(context, objectId, true);
+    QVERIFY(setKeyResult.success);
+    QCOMPARE(recordUndoCount, 1);
+    QCOMPARE(state.currentFrame, 5);
+    QVERIFY(runtimeScene.findObject(objectId)->hasTransformKeyframe(5));
+    QCOMPARE(selectedObjectId, objectId);
+    QVERIFY(selectedSyncOutliner);
+
+    EditorAnimationEngineFacade::ScriptBindings bindings;
+    bindings.context = context;
+    bindings.findObjectIdByName = [objectId](const QString& objectName) {
+        return objectName == "pCube1" ? objectId : 0;
+    };
+    bindings.selectObjectById = [&selectedObjectId](SceneObject::Id incomingObjectId) {
+        selectedObjectId = incomingObjectId;
+    };
+
+    ScriptCommandContext scriptContext;
+    EditorAnimationEngineFacade::bindScriptCommands(scriptContext, bindings);
+
+    QVERIFY(scriptContext.copyKeyframe("pCube1", 5, 8));
+    QCOMPARE(state.currentFrame, 8);
+    QVERIFY(runtimeScene.findObject(objectId)->hasTransformKeyframe(8));
+    QCOMPARE(recordUndoCount, 2);
+
+    scriptContext.setPlaybackState(true);
+    QVERIFY(state.playing);
+}
+
+void EditorUiTests::sceneRuntimeControllerAppliesSceneFrameAndSelection()
+{
+    EditorAnimationState state;
+    state.currentFrame = 1;
+    state.playbackStartFrame = 0;
+    state.playbackEndFrame = 24;
+
+    Scene scene;
+    const SceneObject::Id objectId = scene.createObject("pCube1");
+
+    int recordUndoCount = 0;
+    int appliedFrame = -1;
+    Scene appliedScene;
+    bool refreshedPanels = false;
+    bool framedScene = false;
+    std::uint64_t selectedObjectId = 0;
+    bool selectedSyncOutliner = false;
+
+    EditorSceneRuntimeController::Context context;
+    context.recordUndoState = [&recordUndoCount]() {
+        ++recordUndoCount;
+    };
+    context.animationState = [&state]() {
+        return state;
+    };
+    context.applyAnimationState = [&state, &appliedFrame](const EditorAnimationState& newState) {
+        state = newState;
+        appliedFrame = newState.currentFrame;
+    };
+    context.replaceScene = [&appliedScene](const Scene& newScene) {
+        appliedScene = newScene;
+    };
+    context.refreshScenePanels = [&refreshedPanels]() {
+        refreshedPanels = true;
+    };
+    context.containsObject = [objectId](std::uint64_t incomingObjectId) {
+        return incomingObjectId == objectId;
+    };
+    context.selectObject = [&selectedObjectId, &selectedSyncOutliner](std::uint64_t incomingObjectId, bool syncOutliner) {
+        selectedObjectId = incomingObjectId;
+        selectedSyncOutliner = syncOutliner;
+    };
+    context.clearInspector = []() {};
+    context.frameScene = [&framedScene]() {
+        framedScene = true;
+    };
+
+    EditorSceneRuntimeController::ApplySceneRequest request;
+    request.scene = scene;
+    request.recordUndo = true;
+    request.applyCurrentFrame = true;
+    request.currentFrame = 12;
+    request.selection.objectId = objectId;
+    request.frameEntireScene = true;
+
+    EditorSceneRuntimeController::applyScene(context, request);
+
+    QCOMPARE(recordUndoCount, 1);
+    QCOMPARE(appliedFrame, 12);
+    QVERIFY(refreshedPanels);
+    QVERIFY(framedScene);
+    QCOMPARE(selectedObjectId, objectId);
+    QVERIFY(selectedSyncOutliner);
+    QCOMPARE(appliedScene.allObjectIds().size(), 1);
+}
+
+void EditorUiTests::viewportSceneControllerRoutesSceneMutations()
+{
+    Scene scene;
+    SceneObject::Id selectedObjectId = 0;
+    int beforeMutationCount = 0;
+    int syncCount = 0;
+    int renderCount = 0;
+    int selectionCount = 0;
+
+    EditorViewportSceneController::Context context {
+        scene,
+        selectedObjectId,
+    };
+    context.notifyBeforeSceneMutation = [&beforeMutationCount]() {
+        ++beforeMutationCount;
+    };
+    context.syncSceneToRenderer = [&syncCount]() {
+        ++syncCount;
+    };
+    context.requestRender = [&renderCount]() {
+        ++renderCount;
+    };
+    context.setSelectedObject = [&scene, &selectedObjectId, &selectionCount](SceneObject::Id objectId) {
+        selectedObjectId = scene.contains(objectId) ? objectId : 0;
+        ++selectionCount;
+    };
+
+    const SceneObject::Id objectId =
+        EditorViewportSceneController::createPrimitive(context, PrimitiveMeshFactory::Type::Cube);
+    QVERIFY(objectId != 0);
+    QVERIFY(scene.contains(objectId));
+    QCOMPARE(selectedObjectId, objectId);
+    QCOMPARE(selectionCount, 1);
+    QCOMPARE(beforeMutationCount, 1);
+    QVERIFY(syncCount >= 1);
+    QVERIFY(renderCount >= 1);
+
+    Transform transform;
+    transform.translation = QVector3D(2.0f, 3.0f, 4.0f);
+    QVERIFY(EditorViewportSceneController::setObjectLocalTransform(context, objectId, transform));
+
+    const SceneObject* object = scene.findObject(objectId);
+    QVERIFY(object != nullptr);
+    QCOMPARE(object->localTransform().translation, QVector3D(2.0f, 3.0f, 4.0f));
+    QCOMPARE(beforeMutationCount, 2);
 }
 
 int main(int argc, char** argv)

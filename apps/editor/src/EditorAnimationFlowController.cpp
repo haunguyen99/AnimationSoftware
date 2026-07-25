@@ -100,6 +100,23 @@ OperationResult deleteKeyForSelection(const Context& context, const EditorAnimat
 
 OperationResult duplicateCurrentKeyForSelection(const Context& context, const EditorAnimationState& state, std::uint64_t selectedObjectId, bool logToScript)
 {
+    return duplicateKeyframeForSelection(
+        context,
+        state,
+        selectedObjectId,
+        state.currentFrame,
+        state.currentFrame + 1,
+        logToScript);
+}
+
+OperationResult duplicateKeyframeForSelection(
+    const Context& context,
+    const EditorAnimationState& state,
+    std::uint64_t selectedObjectId,
+    int sourceFrame,
+    int targetFrame,
+    bool logToScript)
+{
     if (selectedObjectId == 0) {
         return invalidSelectionResult("Select an object to duplicate a key", state);
     }
@@ -109,12 +126,10 @@ OperationResult duplicateCurrentKeyForSelection(const Context& context, const Ed
         return invalidSelectionResult("Selected object is no longer available", state);
     }
 
-    if (!object->hasTransformKeyframe(state.currentFrame)) {
-        return invalidSelectionResult(QString("No key at frame %1 to duplicate").arg(state.currentFrame), state);
+    if (!object->hasTransformKeyframe(sourceFrame)) {
+        return invalidSelectionResult(QString("No key at frame %1 to duplicate").arg(sourceFrame), state);
     }
 
-    const int sourceFrame = state.currentFrame;
-    const int targetFrame = state.currentFrame + 1;
     const EditorAnimationController::SceneMutationResult mutation =
         EditorAnimationController::duplicateKeyframe(context.sceneSnapshot(), selectedObjectId, sourceFrame, targetFrame);
     if (!mutation.success) {
@@ -197,6 +212,19 @@ OperationResult setPlaybackRange(const EditorAnimationState& state, int startFra
     return result;
 }
 
+OperationResult setPlaybackState(const EditorAnimationState& state, bool playing, bool logToScript)
+{
+    OperationResult result;
+    result.success = true;
+    result.state = EditorAnimationController::setPlaybackState(state, playing);
+    result.statusMessage = playing ? "Playback started" : "Playback stopped";
+    if (logToScript) {
+        result.commandLine = playing ? "play -state on;" : "play -state off;";
+        result.resultLine = playing ? "// Result: playback started //" : "// Result: playback stopped //";
+    }
+    return result;
+}
+
 OperationResult stepFrame(const EditorAnimationState& state, int delta)
 {
     OperationResult result;
@@ -242,14 +270,7 @@ OperationResult jumpToSelectedObjectKeyframe(const Context& context, const Edito
 
 OperationResult togglePlayback(const EditorAnimationState& state)
 {
-    const bool playing = !state.playing;
-    OperationResult result;
-    result.success = true;
-    result.state = EditorAnimationController::setPlaybackState(state, playing);
-    result.commandLine = playing ? "play -state on;" : "play -state off;";
-    result.resultLine = playing ? "// Result: playback started //" : "// Result: playback stopped //";
-    result.statusMessage = playing ? "Playback started" : "Playback stopped";
-    return result;
+    return setPlaybackState(state, !state.playing, true);
 }
 
 OperationResult advancePlayback(const EditorAnimationState& state)

@@ -25,7 +25,6 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QStatusBar>
-#include <QTimer>
 #include <QToolBar>
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
@@ -152,9 +151,14 @@ MainWindow::MainWindow()
         | QMainWindow::AnimatedDocks);
 
     viewport_ = new ViewportWorkspaceWidget(this);
-    playbackTimer_ = new QTimer(this);
-    playbackTimer_->setInterval(1000 / 24);
-    QObject::connect(playbackTimer_, &QTimer::timeout, this, &MainWindow::advancePlayback);
+    playbackController_.bind(EditorPlaybackController::Context {
+        [this]() {
+            return animationState_;
+        },
+        [this](const EditorAnimationFlowController::OperationResult& result) {
+            applyAnimationFlowResult(result);
+        },
+    });
     viewport_->setSelectionChangedCallback([this](SceneObject::Id objectId) {
         selectObject(objectId, true);
         if (objectId == 0) {
@@ -648,7 +652,7 @@ QWidget* MainWindow::createPrimitivePalettePanel()
 void MainWindow::newScene()
 {
     viewport_->clearScene();
-    setCurrentFrame(viewport_->currentFrame(), false);
+    playbackController_.setCurrentFrame(viewport_->currentFrame(), false);
     currentSceneFilePath_.clear();
     refreshScenePanels();
     viewport_->resetCamera();
@@ -830,21 +834,21 @@ QWidget* MainWindow::createTimeSliderPanel()
         nextKeyAction_);
     animationTimelinePanel_->setPlaybackRangeChangedCallback([this](int startFrame, int endFrame) {
         if (!updatingTimeSlider_) {
-            setPlaybackRange(startFrame, endFrame);
+            playbackController_.setPlaybackRange(startFrame, endFrame);
         }
     });
     animationTimelinePanel_->setCurrentFrameChangedCallback([this](int frame) {
         if (!updatingTimeSlider_) {
-            setCurrentFrame(frame);
+            playbackController_.setCurrentFrame(frame);
         }
     });
-    animationTimelinePanel_->setJumpStartCallback([this]() { setCurrentFrame(animationState_.playbackStartFrame); });
-    animationTimelinePanel_->setStepBackCallback([this]() { stepFrame(-1); });
-    animationTimelinePanel_->setTogglePlaybackCallback([this]() { togglePlayback(); });
-    animationTimelinePanel_->setStepForwardCallback([this]() { stepFrame(1); });
+    animationTimelinePanel_->setJumpStartCallback([this]() { playbackController_.jumpToStart(); });
+    animationTimelinePanel_->setStepBackCallback([this]() { playbackController_.stepFrame(-1); });
+    animationTimelinePanel_->setTogglePlaybackCallback([this]() { playbackController_.togglePlayback(); });
+    animationTimelinePanel_->setStepForwardCallback([this]() { playbackController_.stepFrame(1); });
     animationTimelinePanel_->setPreviousKeyCallback([this]() { jumpToSelectedObjectKeyframe(false, true); });
     animationTimelinePanel_->setNextKeyCallback([this]() { jumpToSelectedObjectKeyframe(true, true); });
-    animationTimelinePanel_->setJumpEndCallback([this]() { setCurrentFrame(animationState_.playbackEndFrame); });
+    animationTimelinePanel_->setJumpEndCallback([this]() { playbackController_.jumpToEnd(); });
     animationTimelinePanel_->setSetKeyCallback([this]() { setKeyForSelection(true); });
     animationTimelinePanel_->setDeleteKeyCallback([this]() { deleteKeyForSelection(true); });
     animationTimelinePanel_->setDuplicateKeyCallback([this]() { duplicateCurrentKeyForSelection(true); });
@@ -971,7 +975,7 @@ bool MainWindow::importFbxFromPath(const QString& filePath, bool logToScript)
         return false;
     }
 
-    setCurrentFrame(animationState_.currentFrame, false);
+    playbackController_.setCurrentFrame(animationState_.currentFrame, false);
     refreshScenePanels();
     applyFileFlowResult(EditorFileFlowController::buildImportSceneResult(filePath), logToScript, 4000);
     return true;
@@ -1345,7 +1349,6 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
     ScriptCommandContext context;
     EditorDocumentController::ScriptBindings documentBindings;
     EditorViewportCommandController::ScriptBindings viewportBindings;
-    EditorAnimationScriptBindings animationBindings;
     documentBindings.newScene = [this]() {
         viewport_->clearScene();
         currentSceneFilePath_.clear();
@@ -1382,26 +1385,6 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
         rotateAction_->setChecked(rotateChecked);
         scaleAction_->setChecked(scaleChecked);
     };
-    animationBindings.findObjectIdByName = [this](const QString& objectName) {
-        return findObjectIdByName(objectName);
-    };
-    animationBindings.selectObjectById = [this](std::uint64_t objectId) {
-        selectObject(objectId, true);
-    };
-    animationBindings.sceneSnapshot = [this]() {
-        return viewport_->sceneSnapshot();
-    };
-    animationBindings.animationState = [this]() {
-        return animationState_;
-    };
-    animationBindings.applySceneMutation = [this](const Scene& scene, std::uint64_t objectId, int currentFrame) {
-        recordUndoState();
-        replaceSceneAndRestoreSelection(scene, objectId, true);
-        applyAnimationState(EditorAnimationController::setCurrentFrame(animationState_, currentFrame));
-    };
-    animationBindings.applyAnimationState = [this](const EditorAnimationState& state) {
-        applyAnimationState(state);
-    };
 
     EditorSelectionController::Context selection = selectionContext();
     EditorSelectionController::bindScriptCommands(
@@ -1416,8 +1399,21 @@ ScriptCommandContext MainWindow::createScriptCommandContext()
     EditorSceneMutationController::bindScriptCommands(context, createSceneScriptBindings());
     EditorDocumentController::bindScriptCommands(context, documentBindings);
     EditorViewportCommandController::bindScriptCommands(context, viewportBindings);
-    EditorAnimationController::bindScriptCommands(context, animationBindings);
+    EditorAnimationEngineFacade::bindScriptCommands(context, createAnimationScriptBindings());
     return context;
+}
+
+EditorAnimationEngineFacade::ScriptBindings MainWindow::createAnimationScriptBindings()
+{
+    EditorAnimationEngineFacade::ScriptBindings bindings;
+    bindings.context = animationEngineContext();
+    bindings.findObjectIdByName = [this](const QString& objectName) {
+        return findObjectIdByName(objectName);
+    };
+    bindings.selectObjectById = [this](std::uint64_t objectId) {
+        selectObject(objectId, true);
+    };
+    return bindings;
 }
 
 EditorCreationController::ScriptBindings MainWindow::createCreationScriptBindings()
@@ -1483,24 +1479,19 @@ EditorSceneMutationController::ScriptBindings MainWindow::createSceneScriptBindi
         return viewport_->captureBindPose(objectId, recursive);
     };
     bindings.applySceneMutation = [this](const Scene& scene, std::uint64_t objectId, bool clearSelectionAfter) {
-        recordUndoState();
-        viewport_->replaceScene(scene);
-        refreshScenePanels();
-        if (clearSelectionAfter) {
-            clearInspector();
-            return;
-        }
-
-        restoreSelectionAfterSceneRefresh(objectId, true);
+        EditorSceneRuntimeController::ApplySceneRequest request;
+        request.scene = scene;
+        request.recordUndo = true;
+        request.selection.objectId = objectId;
+        request.selection.clearSelection = clearSelectionAfter;
+        EditorSceneRuntimeController::applyScene(sceneRuntimeContext(), request);
     };
     bindings.applyLiveMutation = [this](std::uint64_t objectId, bool clearSelectionAfter) {
         refreshScenePanels();
-        if (clearSelectionAfter) {
-            clearInspector();
-            return;
-        }
-
-        restoreSelectionAfterSceneRefresh(objectId, true);
+        EditorSceneRuntimeController::SelectionRefreshRequest request;
+        request.objectId = objectId;
+        request.clearSelection = clearSelectionAfter;
+        EditorSceneRuntimeController::refreshSelection(sceneRuntimeContext(), request);
     };
     return bindings;
 }
@@ -1529,30 +1520,16 @@ void MainWindow::refreshScenePanels()
     clearInspector();
 }
 
-void MainWindow::restoreSelectionAfterSceneRefresh(std::uint64_t objectId, bool syncOutliner)
-{
-    if (objectId != 0 && viewport_->containsObject(objectId)) {
-        selectObject(objectId, syncOutliner);
-    } else {
-        clearInspector();
-    }
-}
-
-void MainWindow::replaceSceneAndRestoreSelection(const Scene& scene, std::uint64_t objectId, bool syncOutliner)
-{
-    viewport_->replaceScene(scene);
-    refreshScenePanels();
-    restoreSelectionAfterSceneRefresh(objectId, syncOutliner);
-}
-
 void MainWindow::restoreHistoryState(const EditorHistoryState& state)
 {
     restoringHistory_ = true;
-    viewport_->replaceScene(state.scene);
-    applyAnimationState(EditorAnimationController::setCurrentFrame(animationState_, state.currentFrame), false);
     markedHierarchyParentId_ = state.markedHierarchyParentId;
-    refreshScenePanels();
-    restoreSelectionAfterSceneRefresh(state.selectedObjectId, true);
+    EditorSceneRuntimeController::ApplySceneRequest request;
+    request.scene = state.scene;
+    request.applyCurrentFrame = true;
+    request.currentFrame = state.currentFrame;
+    request.selection.objectId = state.selectedObjectId;
+    EditorSceneRuntimeController::applyScene(sceneRuntimeContext(), request);
     restoringHistory_ = false;
     updateUndoRedoActions();
 }
@@ -1829,14 +1806,14 @@ void MainWindow::updateWindowTitle()
 
 void MainWindow::applyDocumentSceneLoad(const Scene& scene, const QString& filePath, bool frameScene)
 {
-    recordUndoState();
-    viewport_->replaceScene(scene);
-    setCurrentFrame(viewport_->currentFrame(), false);
+    EditorSceneRuntimeController::ApplySceneRequest request;
+    request.scene = scene;
+    request.recordUndo = true;
+    request.applyCurrentFrame = true;
+    request.currentFrame = scene.currentFrame();
+    request.frameEntireScene = frameScene;
+    EditorSceneRuntimeController::applyScene(sceneRuntimeContext(), request);
     currentSceneFilePath_ = filePath;
-    refreshScenePanels();
-    if (frameScene) {
-        viewport_->frameScene();
-    }
     updateWindowTitle();
 }
 
@@ -1868,7 +1845,7 @@ void MainWindow::applyAnimationState(const EditorAnimationState& state, bool log
     }
     updatingTimeSlider_ = false;
 
-    syncPlaybackTimer();
+    playbackController_.sync(animationState_);
     refreshAnimationTimelineUi();
 
     if (selectedObjectId_ != 0 && viewport_ != nullptr && viewport_->containsObject(selectedObjectId_)) {
@@ -1885,77 +1862,48 @@ void MainWindow::applyAnimationState(const EditorAnimationState& state, bool log
     }
 }
 
-void MainWindow::syncPlaybackTimer()
-{
-    if (playbackTimer_ == nullptr) {
-        return;
-    }
-
-    if (animationState_.playing) {
-        playbackTimer_->start();
-    } else {
-        playbackTimer_->stop();
-    }
-}
-
-void MainWindow::setCurrentFrame(int frame, bool logToScript)
-{
-    applyAnimationFlowResult(EditorAnimationFlowController::setCurrentFrame(animationState_, frame, logToScript));
-}
-
 void MainWindow::setKeyForSelection(bool logToScript)
 {
-    applyAnimationFlowResult(
-        EditorAnimationFlowController::setKeyForSelection(animationFlowContext(), animationState_, selectedObjectId_, logToScript));
+    applyAnimationEngineResult(
+        EditorAnimationEngineFacade::setKeyForSelection(animationEngineContext(), selectedObjectId_, logToScript));
 }
 
 void MainWindow::deleteKeyForSelection(bool logToScript)
 {
-    applyAnimationFlowResult(
-        EditorAnimationFlowController::deleteKeyForSelection(animationFlowContext(), animationState_, selectedObjectId_, logToScript));
+    applyAnimationEngineResult(
+        EditorAnimationEngineFacade::deleteKeyForSelection(animationEngineContext(), selectedObjectId_, logToScript));
 }
 
 void MainWindow::duplicateCurrentKeyForSelection(bool logToScript)
 {
-    applyAnimationFlowResult(
-        EditorAnimationFlowController::duplicateCurrentKeyForSelection(animationFlowContext(), animationState_, selectedObjectId_, logToScript));
+    applyAnimationEngineResult(
+        EditorAnimationEngineFacade::duplicateCurrentKeyForSelection(animationEngineContext(), selectedObjectId_, logToScript));
 }
 
 void MainWindow::shiftSelectedObjectKeyframes(int frameDelta, bool logToScript)
 {
-    applyAnimationFlowResult(
-        EditorAnimationFlowController::shiftSelectedObjectKeyframes(animationFlowContext(), animationState_, selectedObjectId_, frameDelta, logToScript));
+    applyAnimationEngineResult(
+        EditorAnimationEngineFacade::shiftSelectedObjectKeyframes(
+            animationEngineContext(),
+            selectedObjectId_,
+            frameDelta,
+            logToScript));
 }
 
 void MainWindow::setAutoKeyEnabled(bool enabled, bool logToScript)
 {
-    applyAnimationFlowResult(EditorAnimationFlowController::setAutoKeyEnabled(animationState_, enabled, logToScript));
-}
-
-void MainWindow::setPlaybackRange(int startFrame, int endFrame, bool logToScript)
-{
-    applyAnimationFlowResult(EditorAnimationFlowController::setPlaybackRange(animationState_, startFrame, endFrame, logToScript));
-}
-
-void MainWindow::stepFrame(int delta)
-{
-    applyAnimationFlowResult(EditorAnimationFlowController::stepFrame(animationState_, delta));
+    applyAnimationEngineResult(
+        EditorAnimationEngineFacade::setAutoKeyEnabled(animationEngineContext(), enabled, logToScript));
 }
 
 void MainWindow::jumpToSelectedObjectKeyframe(bool forward, bool logToScript)
 {
-    applyAnimationFlowResult(
-        EditorAnimationFlowController::jumpToSelectedObjectKeyframe(animationFlowContext(), animationState_, selectedObjectId_, forward, logToScript));
-}
-
-void MainWindow::togglePlayback()
-{
-    applyAnimationFlowResult(EditorAnimationFlowController::togglePlayback(animationState_));
-}
-
-void MainWindow::advancePlayback()
-{
-    applyAnimationFlowResult(EditorAnimationFlowController::advancePlayback(animationState_));
+    applyAnimationEngineResult(
+        EditorAnimationEngineFacade::jumpToSelectedObjectKeyframe(
+            animationEngineContext(),
+            selectedObjectId_,
+            forward,
+            logToScript));
 }
 
 PrimitiveMeshFactory::Type MainWindow::primitiveTypeFromItem(const QListWidgetItem* item) const
@@ -2061,6 +2009,39 @@ EditorRiggingController::Context MainWindow::riggingContext() const
     return MainWindowContexts::buildRiggingContext(viewport_);
 }
 
+EditorSceneRuntimeController::Context MainWindow::sceneRuntimeContext()
+{
+    EditorSceneRuntimeController::Context context;
+    context.recordUndoState = [this]() {
+        recordUndoState();
+    };
+    context.animationState = [this]() {
+        return animationState_;
+    };
+    context.applyAnimationState = [this](const EditorAnimationState& state) {
+        applyAnimationState(state, false);
+    };
+    context.replaceScene = [this](const Scene& scene) {
+        viewport_->replaceScene(scene);
+    };
+    context.refreshScenePanels = [this]() {
+        refreshScenePanels();
+    };
+    context.containsObject = [this](std::uint64_t objectId) {
+        return viewport_->containsObject(objectId);
+    };
+    context.selectObject = [this](std::uint64_t objectId, bool syncOutliner) {
+        selectObject(objectId, syncOutliner);
+    };
+    context.clearInspector = [this]() {
+        clearInspector();
+    };
+    context.frameScene = [this]() {
+        viewport_->frameScene();
+    };
+    return context;
+}
+
 EditorScriptExecutionController::ExecutionContext MainWindow::scriptExecutionContext()
 {
     EditorScriptExecutionController::ExecutionContext context;
@@ -2143,8 +2124,11 @@ void MainWindow::applyRiggingOperationResult(const EditorRiggingController::Oper
     }
 
     if (result.hasScene) {
-        recordUndoState();
-        replaceSceneAndRestoreSelection(result.scene, result.focusObjectId, true);
+        EditorSceneRuntimeController::ApplySceneRequest request;
+        request.scene = result.scene;
+        request.recordUndo = true;
+        request.selection.objectId = result.focusObjectId;
+        EditorSceneRuntimeController::applyScene(sceneRuntimeContext(), request);
     } else if (result.focusObjectId != 0) {
         updateInspector(result.focusObjectId);
     }
@@ -2178,22 +2162,35 @@ EditorAnimationFlowController::Context MainWindow::animationFlowContext() const
     return MainWindowContexts::buildAnimationFlowContext(viewport_);
 }
 
-void MainWindow::applyAnimationFlowResult(const EditorAnimationFlowController::OperationResult& result)
+EditorAnimationEngineFacade::Context MainWindow::animationEngineContext()
+{
+    EditorAnimationEngineFacade::Context context;
+    context.flow = animationFlowContext();
+    context.runtime = sceneRuntimeContext();
+    context.animationState = [this]() {
+        return animationState_;
+    };
+    context.applyAnimationState = [this](const EditorAnimationState& state) {
+        applyAnimationState(state, false);
+    };
+    return context;
+}
+
+void MainWindow::applyAnimationEngineResult(const EditorAnimationEngineFacade::OperationResult& result)
 {
     if (!result.success) {
         showErrorMessageIfPresent(result.errorMessage, 1500);
         return;
     }
 
-    if (result.sceneChanged) {
-        recordUndoState();
-        replaceSceneAndRestoreSelection(result.scene, result.focusObjectId, true);
-    }
-
-    applyAnimationState(result.state, false);
-
     appendScriptResultLogLines(result.commentLine, result.commandLine, result.resultLine);
     showStatusMessageIfPresent(result.statusMessage, 1500);
+}
+
+void MainWindow::applyAnimationFlowResult(const EditorAnimationFlowController::OperationResult& result)
+{
+    applyAnimationEngineResult(
+        EditorAnimationEngineFacade::applyFlowResult(animationEngineContext(), result));
 }
 
 void MainWindow::applyCreationResult(const EditorCreationController::OperationResult& result)

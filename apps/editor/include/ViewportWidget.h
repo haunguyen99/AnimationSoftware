@@ -7,6 +7,7 @@
 
 #include <functional>
 
+#include "EditorViewportSceneController.h"
 #include "io/FbxImporter.h"
 #include "rendering/ViewportRenderer.h"
 #include "scene/PrimitiveMeshFactory.h"
@@ -125,6 +126,7 @@ private:
     QString cameraViewLabelText() const;
     QVector3D gizmoOrigin() const;
     float gizmoSize() const;
+    EditorViewportSceneController::Context sceneControllerContext();
     void notifyBeforeSceneMutation();
     void applyDrag(const QPoint& currentPosition);
     void handleHotkeys(QMouseEvent* event);

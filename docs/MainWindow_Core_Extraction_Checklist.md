@@ -105,6 +105,13 @@ Use this file as the single progress log:
 - [x] `J3` Add targeted script editor checks when a ticket touches script bindings
 - [x] `J4` Re-check lambda capture and object lifetime when a ticket changes UI wiring
 
+## Post-Epic Engine Follow-Up
+
+- [x] `P1` Extract playback/time shell seam into `EditorPlaybackController`
+- [x] `P2` Extract scene apply/runtime shell seam into `EditorSceneRuntimeController`
+- [x] `P3` Extract viewport scene mutation seam into `EditorViewportSceneController`
+- [x] `P4` Route animation key-edit and script mutation apply flow through `EditorAnimationEngineFacade`
+
 ## Recommended Execution Order
 
 1. `A1`, `B1`, `C1`, `D1`, `E1`
@@ -160,6 +167,10 @@ Use this file as the single progress log:
 | 2026-07-24 | `J2` | Done | Formalized test verification rule for code-touching editor shell tickets in `Editor_Shell_Verification_Discipline.md` | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
 | 2026-07-24 | `J3` | Done | Recorded targeted script editor regression surface around `EditorUiTests` and script command registry dispatch tests | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
 | 2026-07-24 | `J4` | Done | Recorded lambda capture and object lifetime review rule for UI wiring changes in editor shell seams | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
+| 2026-07-24 | `P1` | Done | Moved playback clock, frame stepping, playback range, and play/stop intent routing out of `MainWindow` into `EditorPlaybackController` | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
+| 2026-07-24 | `P2` | Done | Moved scene apply, current-frame reapply, selection restore, and frame-scene runtime orchestration out of `MainWindow` into `EditorSceneRuntimeController` | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
+| 2026-07-24 | `P3` | Done | Moved viewport scene mutation and authoring runtime seam out of `ViewportWidget` into `EditorViewportSceneController` | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
+| 2026-07-24 | `P4` | Done | Routed UI and script key-edit flows through `EditorAnimationEngineFacade`, leaving `EditorAnimationController` as pure animation logic and `EditorAnimationFlowController` as pure intent shaping | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
 
 ## Current Snapshot
 
@@ -207,11 +218,16 @@ Use this file as the single progress log:
   - timeline panel composition lives in `createTimeSliderPanel()`
   - widget-level timeline behavior lives in `AnimationTimelinePanel`
   - playback and keyframe flows route through animation controllers
+- `Engine` follow-up extraction has concrete seams now:
+  - `EditorPlaybackController` owns playback clock and frame intent routing
+  - `EditorSceneRuntimeController` owns scene apply/runtime reselection orchestration
+  - `EditorViewportSceneController` owns viewport-side scene mutation orchestration
+  - `EditorAnimationEngineFacade` owns animation key-edit apply flow across UI and script paths
 - `View/Rendering` shell flow is now cleaner:
   - view menu wiring lives in `createViewMenu()`
   - transform menu wiring lives in `createTransformMenu()`
   - view and display toolbar sections live in dedicated toolbar helpers
   - long view/display lambdas have been replaced by named shell methods
-  - rendering behavior still routes through viewport UI seams and viewport widget methods
+  - rendering behavior routes through viewport UI seams, while viewport scene mutations now route through `EditorViewportSceneController`
 - Remaining work is no longer about removing large domain logic from `MainWindow`; it is mostly follow-up refinement under later epics:
   - no open extraction epic in checklist

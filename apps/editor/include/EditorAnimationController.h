@@ -3,9 +3,6 @@
 #include <QString>
 #include <QVector>
 
-#include <functional>
-
-#include "ScriptCommandSystem.h"
 #include "scene/Scene.h"
 
 struct EditorAnimationState
@@ -37,16 +34,6 @@ struct EditorAnimationTimelineViewModel
     bool playing = false;
 };
 
-struct EditorAnimationScriptBindings
-{
-    std::function<SceneObject::Id(const QString&)> findObjectIdByName;
-    std::function<void(SceneObject::Id)> selectObjectById;
-    std::function<Scene()> sceneSnapshot;
-    std::function<EditorAnimationState()> animationState;
-    std::function<void(const Scene&, SceneObject::Id, int)> applySceneMutation;
-    std::function<void(const EditorAnimationState&)> applyAnimationState;
-};
-
 namespace EditorAnimationController
 {
 struct SceneMutationResult
@@ -67,7 +54,6 @@ EditorAnimationTimelineViewModel buildTimelineViewModel(
     const Scene& scene,
     SceneObject::Id selectedObjectId,
     const EditorAnimationState& state);
-void bindScriptCommands(ScriptCommandContext& context, const EditorAnimationScriptBindings& bindings);
 
 SceneMutationResult setKeyframe(const Scene& scene, SceneObject::Id objectId, int frame);
 SceneMutationResult deleteKeyframe(const Scene& scene, SceneObject::Id objectId, int frame);

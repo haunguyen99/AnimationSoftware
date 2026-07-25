@@ -32,9 +32,17 @@ OperationResult setCurrentFrame(const EditorAnimationState& state, int frame, bo
 OperationResult setKeyForSelection(const Context& context, const EditorAnimationState& state, std::uint64_t selectedObjectId, bool logToScript);
 OperationResult deleteKeyForSelection(const Context& context, const EditorAnimationState& state, std::uint64_t selectedObjectId, bool logToScript);
 OperationResult duplicateCurrentKeyForSelection(const Context& context, const EditorAnimationState& state, std::uint64_t selectedObjectId, bool logToScript);
+OperationResult duplicateKeyframeForSelection(
+    const Context& context,
+    const EditorAnimationState& state,
+    std::uint64_t selectedObjectId,
+    int sourceFrame,
+    int targetFrame,
+    bool logToScript);
 OperationResult shiftSelectedObjectKeyframes(const Context& context, const EditorAnimationState& state, std::uint64_t selectedObjectId, int frameDelta, bool logToScript);
 OperationResult setAutoKeyEnabled(const EditorAnimationState& state, bool enabled, bool logToScript);
 OperationResult setPlaybackRange(const EditorAnimationState& state, int startFrame, int endFrame, bool logToScript);
+OperationResult setPlaybackState(const EditorAnimationState& state, bool playing, bool logToScript);
 OperationResult stepFrame(const EditorAnimationState& state, int delta);
 OperationResult jumpToSelectedObjectKeyframe(const Context& context, const EditorAnimationState& state, std::uint64_t selectedObjectId, bool forward, bool logToScript);
 OperationResult togglePlayback(const EditorAnimationState& state);
