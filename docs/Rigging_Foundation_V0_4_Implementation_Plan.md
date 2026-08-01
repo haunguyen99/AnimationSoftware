@@ -181,7 +181,7 @@ Phu thuoc san co:
 * `Scene`
 * `SceneObject`
 * `PhoenixSceneDocument`
-* `MainWindow`
+* `EditorShell`
 * `ViewportWidget`
 * `ScriptCommandSystem`
 * [FEATURE_WORKFLOW.md](</E:/Animation Software/FEATURE_WORKFLOW.md>)

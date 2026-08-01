@@ -98,7 +98,7 @@ Scene
        |- MeshObject
        |- JointObject
 
-MainWindow
+EditorShell
   |- Outliner
   |- Channel Box
   |- ViewportWidget
@@ -111,8 +111,8 @@ ViewportWidget
 Quan he:
 
 ```text
-MainWindow -> Scene
-MainWindow -> ScriptCommandSystem
+EditorShell -> Scene
+EditorShell -> ScriptCommandSystem
 SceneObject(joint) -> local transform
 SceneObject(joint) -> joint orientation
 SceneObject(joint) -> bind pose data
@@ -127,11 +127,11 @@ ViewportWidget -> read Scene joint hierarchy -> draw joints/bones
 
 ```text
 User click "Create Joint"
-  -> MainWindow / command dispatch xac dinh parent target
+  -> EditorShell / command dispatch xac dinh parent target
   -> Scene tao SceneObject type = joint
   -> Scene set local transform + orientation mac dinh
   -> neu co parent thi add vao hierarchy
-  -> MainWindow refresh Outliner / Channel Box / Viewport
+  -> EditorShell refresh Outliner / Channel Box / Viewport
 ```
 
 ### Reparent Joint
@@ -175,7 +175,7 @@ Pattern chinh:
 
 * `Scene` = source of truth cho joint hierarchy
 * `SceneObject` = host cho common transform + type-specific rig data nho
-* `MainWindow` = orchestration cho rigging actions cap editor
+* `EditorShell` = orchestration cho rigging actions cap editor
 * `ViewportWidget` = read-only visualization cho joint hierarchy
 * `ScriptCommandSystem` = adapter command -> scene mutation
 
@@ -209,7 +209,7 @@ Rule:
 * serialize / deserialize joint orientation
 * serialize / deserialize bind pose
 
-`MainWindow`
+`EditorShell`
 
 * expose action `Create Joint`, `Parent`, `Unparent`
 * sync selection va UI widgets

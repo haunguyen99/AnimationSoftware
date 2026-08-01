@@ -5,7 +5,7 @@
 
 #include <functional>
 
-#include "ScriptCommandSystem.h"
+#include "core/commands/ScriptCommandSystem.h"
 
 namespace EditorScriptExecutionController
 {

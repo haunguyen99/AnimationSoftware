@@ -15,12 +15,12 @@
 #include <QApplication>
 #include <QtTest>
 
-#include "EditorPlaybackController.h"
-#include "EditorAnimationEngineFacade.h"
-#include "EditorSceneRuntimeController.h"
-#include "EditorViewportSceneController.h"
-#include "MainWindow.h"
-#include "ScriptCommandSystem.h"
+#include "engine/playback/EditorPlaybackController.h"
+#include "engine/animation/EditorAnimationEngineFacade.h"
+#include "engine/runtime/EditorSceneRuntimeController.h"
+#include "engine/runtime/EditorViewportSceneController.h"
+#include "core/app/EditorShell.h"
+#include "core/commands/ScriptCommandSystem.h"
 #include "ViewportWorkspaceWidget.h"
 
 class EditorUiTests : public QObject
@@ -53,6 +53,7 @@ private slots:
     void leftMouseDragReparentsOutlinerItems();
     void jointInspectorEditsOrientationAndCapturesBindPose();
     void timelineUiShowsKeyframeFeedback();
+    void timelineUiSupportsFrameRangeSelection();
     void playbackControllerRoutesTimeIntentsAndTicks();
     void animationEngineFacadeAppliesKeyEditsAndScriptBindings();
     void sceneRuntimeControllerAppliesSceneFrameAndSelection();
@@ -64,19 +65,19 @@ private:
 
 void EditorUiTests::createCubeUpdatesOutlinerAndChannelBox()
 {
-    MainWindow window;
-    window.show();
-    QTRY_VERIFY(window.isVisible());
+    EditorShell shell;
+    shell.show();
+    QTRY_VERIFY(shell.isVisible());
     QTest::qWait(200);
 
-    auto* openPrimitivesAction = window.findChild<QAction*>("polygonPrimitivesAction");
-    auto* primitiveList = window.findChild<QListWidget*>("polygonPrimitivesList");
-    auto* createPrimitiveButton = window.findChild<QPushButton*>("createPrimitiveButton");
-    auto* outlinerTree = window.findChild<QTreeWidget*>("outlinerTree");
-    auto* channelObjectNameLabel = window.findChild<QLabel*>("channelObjectNameLabel");
-    auto* translateXSpinBox = window.findChild<QDoubleSpinBox*>("translateXSpinBox");
-    auto* visibilityCheckBox = window.findChild<QCheckBox*>("visibilityCheckBox");
-    auto* polygonDock = window.findChild<QDockWidget*>("PolygonPrimitivesDock");
+    auto* openPrimitivesAction = shell.findChild<QAction*>("polygonPrimitivesAction");
+    auto* primitiveList = shell.findChild<QListWidget*>("polygonPrimitivesList");
+    auto* createPrimitiveButton = shell.findChild<QPushButton*>("createPrimitiveButton");
+    auto* outlinerTree = shell.findChild<QTreeWidget*>("outlinerTree");
+    auto* channelObjectNameLabel = shell.findChild<QLabel*>("channelObjectNameLabel");
+    auto* translateXSpinBox = shell.findChild<QDoubleSpinBox*>("translateXSpinBox");
+    auto* visibilityCheckBox = shell.findChild<QCheckBox*>("visibilityCheckBox");
+    auto* polygonDock = shell.findChild<QDockWidget*>("PolygonPrimitivesDock");
 
     QVERIFY(openPrimitivesAction != nullptr);
     QVERIFY(primitiveList != nullptr);
@@ -106,17 +107,17 @@ void EditorUiTests::createCubeUpdatesOutlinerAndChannelBox()
 
 void EditorUiTests::restoreDefaultLayoutResetsFloatingDocks()
 {
-    MainWindow window;
-    window.show();
-    QTRY_VERIFY(window.isVisible());
+    EditorShell shell;
+    shell.show();
+    QTRY_VERIFY(shell.isVisible());
     QTest::qWait(200);
 
-    auto* viewportDock = window.findChild<QDockWidget*>("ViewportDock");
-    auto* outlinerDock = window.findChild<QDockWidget*>("OutlinerDock");
-    auto* inspectorDock = window.findChild<QDockWidget*>("InspectorDock");
-    auto* restoreAction = window.findChild<QAction*>("restoreWorkspaceLayoutAction");
+    auto* viewportDock = shell.findChild<QDockWidget*>("ViewportDock");
+    auto* outlinerDock = shell.findChild<QDockWidget*>("OutlinerDock");
+    auto* inspectorDock = shell.findChild<QDockWidget*>("InspectorDock");
+    auto* restoreAction = shell.findChild<QAction*>("restoreWorkspaceLayoutAction");
 
-    QVERIFY(window.centralWidget() != nullptr);
+    QVERIFY(shell.centralWidget() != nullptr);
     QVERIFY(outlinerDock != nullptr);
     QVERIFY(inspectorDock != nullptr);
     QVERIFY(restoreAction != nullptr);
@@ -136,17 +137,17 @@ void EditorUiTests::restoreDefaultLayoutResetsFloatingDocks()
 
 void EditorUiTests::transformToolbarUpdatesViewportToolState()
 {
-    MainWindow window;
-    window.show();
-    QTRY_VERIFY(window.isVisible());
+    EditorShell shell;
+    shell.show();
+    QTRY_VERIFY(shell.isVisible());
     QTest::qWait(200);
 
-    auto* viewport = dynamic_cast<ViewportWorkspaceWidget*>(window.findChild<QWidget*>("viewportWidget"));
-    auto* translateAction = window.findChild<QAction*>("translateAction");
-    auto* rotateAction = window.findChild<QAction*>("rotateAction");
-    auto* scaleAction = window.findChild<QAction*>("scaleAction");
-    auto* worldAxisAction = window.findChild<QAction*>("worldAxisAction");
-    auto* localAxisAction = window.findChild<QAction*>("localAxisAction");
+    auto* viewport = dynamic_cast<ViewportWorkspaceWidget*>(shell.findChild<QWidget*>("viewportWidget"));
+    auto* translateAction = shell.findChild<QAction*>("translateAction");
+    auto* rotateAction = shell.findChild<QAction*>("rotateAction");
+    auto* scaleAction = shell.findChild<QAction*>("scaleAction");
+    auto* worldAxisAction = shell.findChild<QAction*>("worldAxisAction");
+    auto* localAxisAction = shell.findChild<QAction*>("localAxisAction");
 
     QVERIFY(viewport != nullptr);
     QVERIFY(translateAction != nullptr);
@@ -183,19 +184,19 @@ void EditorUiTests::transformToolbarUpdatesViewportToolState()
 
 void EditorUiTests::viewMenuSwitchesViewportCameraPresets()
 {
-    MainWindow window;
-    window.show();
-    QTRY_VERIFY(window.isVisible());
+    EditorShell shell;
+    shell.show();
+    QTRY_VERIFY(shell.isVisible());
     QTest::qWait(200);
 
-    auto* viewport = dynamic_cast<ViewportWorkspaceWidget*>(window.findChild<QWidget*>("viewportWidget"));
-    auto* perspectiveCameraAction = window.findChild<QAction*>("perspectiveCameraAction");
-    auto* frontCameraAction = window.findChild<QAction*>("frontCameraAction");
-    auto* backCameraAction = window.findChild<QAction*>("backCameraAction");
-    auto* leftCameraAction = window.findChild<QAction*>("leftCameraAction");
-    auto* rightCameraAction = window.findChild<QAction*>("rightCameraAction");
-    auto* topCameraAction = window.findChild<QAction*>("topCameraAction");
-    auto* bottomCameraAction = window.findChild<QAction*>("bottomCameraAction");
+    auto* viewport = dynamic_cast<ViewportWorkspaceWidget*>(shell.findChild<QWidget*>("viewportWidget"));
+    auto* perspectiveCameraAction = shell.findChild<QAction*>("perspectiveCameraAction");
+    auto* frontCameraAction = shell.findChild<QAction*>("frontCameraAction");
+    auto* backCameraAction = shell.findChild<QAction*>("backCameraAction");
+    auto* leftCameraAction = shell.findChild<QAction*>("leftCameraAction");
+    auto* rightCameraAction = shell.findChild<QAction*>("rightCameraAction");
+    auto* topCameraAction = shell.findChild<QAction*>("topCameraAction");
+    auto* bottomCameraAction = shell.findChild<QAction*>("bottomCameraAction");
 
     QVERIFY(viewport != nullptr);
     QVERIFY(perspectiveCameraAction != nullptr);
@@ -251,14 +252,14 @@ void EditorUiTests::viewMenuSwitchesViewportCameraPresets()
 
 void EditorUiTests::spaceTogglesQuadViewAndMaximizesActiveViewport()
 {
-    MainWindow window;
-    window.show();
-    QTRY_VERIFY(window.isVisible());
+    EditorShell shell;
+    shell.show();
+    QTRY_VERIFY(shell.isVisible());
     QTest::qWait(200);
 
-    auto* viewportWorkspace = dynamic_cast<ViewportWorkspaceWidget*>(window.findChild<QWidget*>("viewportWidget"));
-    auto* perspectiveViewport = window.findChild<QWidget*>("perspectiveViewportWidget");
-    auto* frontViewport = window.findChild<QWidget*>("frontViewportWidget");
+    auto* viewportWorkspace = dynamic_cast<ViewportWorkspaceWidget*>(shell.findChild<QWidget*>("viewportWidget"));
+    auto* perspectiveViewport = shell.findChild<QWidget*>("perspectiveViewportWidget");
+    auto* frontViewport = shell.findChild<QWidget*>("frontViewportWidget");
 
     QVERIFY(viewportWorkspace != nullptr);
     QVERIFY(perspectiveViewport != nullptr);
@@ -284,17 +285,17 @@ void EditorUiTests::spaceTogglesQuadViewAndMaximizesActiveViewport()
 
 void EditorUiTests::editMenuUndoRedoRestoresCreatedPrimitive()
 {
-    MainWindow window;
-    window.show();
-    QTRY_VERIFY(window.isVisible());
+    EditorShell shell;
+    shell.show();
+    QTRY_VERIFY(shell.isVisible());
     QTest::qWait(200);
 
-    auto* openPrimitivesAction = window.findChild<QAction*>("polygonPrimitivesAction");
-    auto* primitiveList = window.findChild<QListWidget*>("polygonPrimitivesList");
-    auto* createPrimitiveButton = window.findChild<QPushButton*>("createPrimitiveButton");
-    auto* outlinerTree = window.findChild<QTreeWidget*>("outlinerTree");
-    auto* undoAction = window.findChild<QAction*>("undoAction");
-    auto* redoAction = window.findChild<QAction*>("redoAction");
+    auto* openPrimitivesAction = shell.findChild<QAction*>("polygonPrimitivesAction");
+    auto* primitiveList = shell.findChild<QListWidget*>("polygonPrimitivesList");
+    auto* createPrimitiveButton = shell.findChild<QPushButton*>("createPrimitiveButton");
+    auto* outlinerTree = shell.findChild<QTreeWidget*>("outlinerTree");
+    auto* undoAction = shell.findChild<QAction*>("undoAction");
+    auto* redoAction = shell.findChild<QAction*>("redoAction");
 
     QVERIFY(openPrimitivesAction != nullptr);
     QVERIFY(primitiveList != nullptr);
@@ -326,18 +327,18 @@ void EditorUiTests::editMenuUndoRedoRestoresCreatedPrimitive()
 
 void EditorUiTests::scriptEditorExecutesPrimitiveCommand()
 {
-    MainWindow window;
-    window.show();
-    QTRY_VERIFY(window.isVisible());
+    EditorShell shell;
+    shell.show();
+    QTRY_VERIFY(shell.isVisible());
     QTest::qWait(200);
 
-    auto* openScriptEditorAction = window.findChild<QAction*>("scriptEditorAction");
-    auto* scriptDock = window.findChild<QDockWidget*>("ScriptEditorDock");
-    auto* scriptInput = window.findChild<QPlainTextEdit*>("scriptInputTextEdit");
-    auto* scriptHistory = window.findChild<QPlainTextEdit*>("scriptHistoryTextEdit");
-    auto* outlinerTree = window.findChild<QTreeWidget*>("outlinerTree");
-    auto* channelObjectNameLabel = window.findChild<QLabel*>("channelObjectNameLabel");
-    auto* executeAllAction = window.findChild<QAction*>("scriptExecuteAllAction");
+    auto* openScriptEditorAction = shell.findChild<QAction*>("scriptEditorAction");
+    auto* scriptDock = shell.findChild<QDockWidget*>("ScriptEditorDock");
+    auto* scriptInput = shell.findChild<QPlainTextEdit*>("scriptInputTextEdit");
+    auto* scriptHistory = shell.findChild<QPlainTextEdit*>("scriptHistoryTextEdit");
+    auto* outlinerTree = shell.findChild<QTreeWidget*>("outlinerTree");
+    auto* channelObjectNameLabel = shell.findChild<QLabel*>("channelObjectNameLabel");
+    auto* executeAllAction = shell.findChild<QAction*>("scriptExecuteAllAction");
 
     QVERIFY(openScriptEditorAction != nullptr);
     QVERIFY(scriptDock != nullptr);
@@ -737,16 +738,16 @@ void EditorUiTests::scriptCommandRegistryDispatchesBindSkinCommand()
 
 void EditorUiTests::hierarchyActionsParentAndUnparentJoints()
 {
-    MainWindow window;
-    window.show();
-    QTRY_VERIFY(window.isVisible());
+    EditorShell shell;
+    shell.show();
+    QTRY_VERIFY(shell.isVisible());
     QTest::qWait(200);
 
-    auto* createJointAction = window.findChild<QAction*>("createJointAction");
-    auto* markHierarchyParentAction = window.findChild<QAction*>("markHierarchyParentAction");
-    auto* parentToMarkedParentAction = window.findChild<QAction*>("parentToMarkedParentAction");
-    auto* unparentSelectedAction = window.findChild<QAction*>("unparentSelectedAction");
-    auto* outlinerTree = window.findChild<QTreeWidget*>("outlinerTree");
+    auto* createJointAction = shell.findChild<QAction*>("createJointAction");
+    auto* markHierarchyParentAction = shell.findChild<QAction*>("markHierarchyParentAction");
+    auto* parentToMarkedParentAction = shell.findChild<QAction*>("parentToMarkedParentAction");
+    auto* unparentSelectedAction = shell.findChild<QAction*>("unparentSelectedAction");
+    auto* outlinerTree = shell.findChild<QTreeWidget*>("outlinerTree");
 
     QVERIFY(createJointAction != nullptr);
     QVERIFY(markHierarchyParentAction != nullptr);
@@ -790,19 +791,19 @@ void EditorUiTests::hierarchyActionsParentAndUnparentJoints()
 
 void EditorUiTests::bindSkinActionBindsMeshToMarkedJoint()
 {
-    MainWindow window;
-    window.show();
-    QTRY_VERIFY(window.isVisible());
+    EditorShell shell;
+    shell.show();
+    QTRY_VERIFY(shell.isVisible());
     QTest::qWait(200);
 
-    auto* createJointAction = window.findChild<QAction*>("createJointAction");
-    auto* markHierarchyParentAction = window.findChild<QAction*>("markHierarchyParentAction");
-    auto* bindSkinAction = window.findChild<QAction*>("bindSkinAction");
-    auto* openPrimitivesAction = window.findChild<QAction*>("polygonPrimitivesAction");
-    auto* primitiveList = window.findChild<QListWidget*>("polygonPrimitivesList");
-    auto* createPrimitiveButton = window.findChild<QPushButton*>("createPrimitiveButton");
-    auto* outlinerTree = window.findChild<QTreeWidget*>("outlinerTree");
-    auto* skinBindingStatusLabel = window.findChild<QLabel*>("skinBindingStatusLabel");
+    auto* createJointAction = shell.findChild<QAction*>("createJointAction");
+    auto* markHierarchyParentAction = shell.findChild<QAction*>("markHierarchyParentAction");
+    auto* bindSkinAction = shell.findChild<QAction*>("bindSkinAction");
+    auto* openPrimitivesAction = shell.findChild<QAction*>("polygonPrimitivesAction");
+    auto* primitiveList = shell.findChild<QListWidget*>("polygonPrimitivesList");
+    auto* createPrimitiveButton = shell.findChild<QPushButton*>("createPrimitiveButton");
+    auto* outlinerTree = shell.findChild<QTreeWidget*>("outlinerTree");
+    auto* skinBindingStatusLabel = shell.findChild<QLabel*>("skinBindingStatusLabel");
 
     QVERIFY(createJointAction != nullptr);
     QVERIFY(markHierarchyParentAction != nullptr);
@@ -835,19 +836,19 @@ void EditorUiTests::bindSkinActionBindsMeshToMarkedJoint()
 
 void EditorUiTests::jointInspectorEditsOrientationAndCapturesBindPose()
 {
-    MainWindow window;
-    window.show();
-    QTRY_VERIFY(window.isVisible());
+    EditorShell shell;
+    shell.show();
+    QTRY_VERIFY(shell.isVisible());
     QTest::qWait(200);
 
-    auto* createJointAction = window.findChild<QAction*>("createJointAction");
-    auto* outlinerTree = window.findChild<QTreeWidget*>("outlinerTree");
-    auto* channelObjectNameLabel = window.findChild<QLabel*>("channelObjectNameLabel");
-    auto* jointOrientYSpinBox = window.findChild<QDoubleSpinBox*>("jointOrientYSpinBox");
-    auto* alignJointOrientationButton = window.findChild<QPushButton*>("alignJointOrientationButton");
-    auto* captureBindPoseRecursiveButton = window.findChild<QPushButton*>("captureBindPoseRecursiveButton");
-    auto* bindPoseStatusLabel = window.findChild<QLabel*>("bindPoseStatusLabel");
-    auto* resetJointOrientationAction = window.findChild<QAction*>("resetJointOrientationAction");
+    auto* createJointAction = shell.findChild<QAction*>("createJointAction");
+    auto* outlinerTree = shell.findChild<QTreeWidget*>("outlinerTree");
+    auto* channelObjectNameLabel = shell.findChild<QLabel*>("channelObjectNameLabel");
+    auto* jointOrientYSpinBox = shell.findChild<QDoubleSpinBox*>("jointOrientYSpinBox");
+    auto* alignJointOrientationButton = shell.findChild<QPushButton*>("alignJointOrientationButton");
+    auto* captureBindPoseRecursiveButton = shell.findChild<QPushButton*>("captureBindPoseRecursiveButton");
+    auto* bindPoseStatusLabel = shell.findChild<QLabel*>("bindPoseStatusLabel");
+    auto* resetJointOrientationAction = shell.findChild<QAction*>("resetJointOrientationAction");
 
     QVERIFY(createJointAction != nullptr);
     QVERIFY(outlinerTree != nullptr);
@@ -880,10 +881,10 @@ void EditorUiTests::jointInspectorEditsOrientationAndCapturesBindPose()
 
 void EditorUiTests::hierarchyActionsExposeMayaLikeShortcuts()
 {
-    MainWindow window;
+    EditorShell shell;
 
-    auto* parentToMarkedParentAction = window.findChild<QAction*>("parentToMarkedParentAction");
-    auto* unparentSelectedAction = window.findChild<QAction*>("unparentSelectedAction");
+    auto* parentToMarkedParentAction = shell.findChild<QAction*>("parentToMarkedParentAction");
+    auto* unparentSelectedAction = shell.findChild<QAction*>("unparentSelectedAction");
 
     QVERIFY(parentToMarkedParentAction != nullptr);
     QVERIFY(unparentSelectedAction != nullptr);
@@ -893,13 +894,13 @@ void EditorUiTests::hierarchyActionsExposeMayaLikeShortcuts()
 
 void EditorUiTests::leftMouseDragReparentsOutlinerItems()
 {
-    MainWindow window;
-    window.show();
-    QTRY_VERIFY(window.isVisible());
+    EditorShell shell;
+    shell.show();
+    QTRY_VERIFY(shell.isVisible());
     QTest::qWait(200);
 
-    auto* createJointAction = window.findChild<QAction*>("createJointAction");
-    auto* outlinerTree = window.findChild<QTreeWidget*>("outlinerTree");
+    auto* createJointAction = shell.findChild<QAction*>("createJointAction");
+    auto* outlinerTree = shell.findChild<QTreeWidget*>("outlinerTree");
 
     QVERIFY(createJointAction != nullptr);
     QVERIFY(outlinerTree != nullptr);
@@ -943,25 +944,25 @@ void EditorUiTests::leftMouseDragReparentsOutlinerItems()
 
 void EditorUiTests::timelineUiShowsKeyframeFeedback()
 {
-    MainWindow window;
-    window.show();
-    QTRY_VERIFY(window.isVisible());
+    EditorShell shell;
+    shell.show();
+    QTRY_VERIFY(shell.isVisible());
     QTest::qWait(200);
 
-    auto* openPrimitivesAction = window.findChild<QAction*>("polygonPrimitivesAction");
-    auto* primitiveList = window.findChild<QListWidget*>("polygonPrimitivesList");
-    auto* createPrimitiveButton = window.findChild<QPushButton*>("createPrimitiveButton");
-    auto* autoKeyButton = window.findChild<QPushButton*>("autoKeyButton");
-    auto* setKeyButton = window.findChild<QPushButton*>("setKeyButton");
-    auto* deleteKeyButton = window.findChild<QPushButton*>("deleteKeyButton");
-    auto* duplicateKeyButton = window.findChild<QPushButton*>("duplicateKeyButton");
-    auto* shiftKeysRightButton = window.findChild<QPushButton*>("shiftKeysRightButton");
-    auto* previousKeyButton = window.findChild<QPushButton*>("previousKeyButton");
-    auto* nextKeyButton = window.findChild<QPushButton*>("nextKeyButton");
-    auto* timelineStatusLabel = window.findChild<QLabel*>("timelineStatusLabel");
-    auto* currentFrameSpinBox = window.findChild<QSpinBox*>("currentFrameSpinBox");
-    auto* keyframeTimelineWidget = window.findChild<QWidget*>("keyframeTimelineWidget");
-    auto* translateXSpinBox = window.findChild<QDoubleSpinBox*>("translateXSpinBox");
+    auto* openPrimitivesAction = shell.findChild<QAction*>("polygonPrimitivesAction");
+    auto* primitiveList = shell.findChild<QListWidget*>("polygonPrimitivesList");
+    auto* createPrimitiveButton = shell.findChild<QPushButton*>("createPrimitiveButton");
+    auto* autoKeyButton = shell.findChild<QPushButton*>("autoKeyButton");
+    auto* setKeyButton = shell.findChild<QPushButton*>("setKeyButton");
+    auto* deleteKeyButton = shell.findChild<QPushButton*>("deleteKeyButton");
+    auto* duplicateKeyButton = shell.findChild<QPushButton*>("duplicateKeyButton");
+    auto* shiftKeysRightButton = shell.findChild<QPushButton*>("shiftKeysRightButton");
+    auto* previousKeyButton = shell.findChild<QPushButton*>("previousKeyButton");
+    auto* nextKeyButton = shell.findChild<QPushButton*>("nextKeyButton");
+    auto* timelineStatusLabel = shell.findChild<QLabel*>("timelineStatusLabel");
+    auto* currentFrameSpinBox = shell.findChild<QSpinBox*>("currentFrameSpinBox");
+    auto* keyframeTimelineWidget = shell.findChild<QWidget*>("keyframeTimelineWidget");
+    auto* translateXSpinBox = shell.findChild<QDoubleSpinBox*>("translateXSpinBox");
 
     QVERIFY(openPrimitivesAction != nullptr);
     QVERIFY(primitiveList != nullptr);
@@ -1032,6 +1033,58 @@ void EditorUiTests::timelineUiShowsKeyframeFeedback()
     QTRY_COMPARE(setKeyButton->text(), QString("Key Selected"));
     QTRY_VERIFY(deleteKeyButton->isEnabled());
     QVERIFY(timelineStatusLabel->text().contains("frame 12 keyed"));
+}
+
+void EditorUiTests::timelineUiSupportsFrameRangeSelection()
+{
+    EditorShell shell;
+    shell.show();
+    QTRY_VERIFY(shell.isVisible());
+    QTest::qWait(200);
+
+    auto* openPrimitivesAction = shell.findChild<QAction*>("polygonPrimitivesAction");
+    auto* primitiveList = shell.findChild<QListWidget*>("polygonPrimitivesList");
+    auto* createPrimitiveButton = shell.findChild<QPushButton*>("createPrimitiveButton");
+    auto* autoKeyButton = shell.findChild<QPushButton*>("autoKeyButton");
+    auto* currentFrameSpinBox = shell.findChild<QSpinBox*>("currentFrameSpinBox");
+    auto* keyframeTimelineWidget = shell.findChild<QWidget*>("keyframeTimelineWidget");
+    auto* timelineStatusLabel = shell.findChild<QLabel*>("timelineStatusLabel");
+    auto* translateXSpinBox = shell.findChild<QDoubleSpinBox*>("translateXSpinBox");
+
+    QVERIFY(openPrimitivesAction != nullptr);
+    QVERIFY(primitiveList != nullptr);
+    QVERIFY(createPrimitiveButton != nullptr);
+    QVERIFY(autoKeyButton != nullptr);
+    QVERIFY(currentFrameSpinBox != nullptr);
+    QVERIFY(keyframeTimelineWidget != nullptr);
+    QVERIFY(timelineStatusLabel != nullptr);
+    QVERIFY(translateXSpinBox != nullptr);
+
+    openPrimitivesAction->trigger();
+    const QList<QListWidgetItem*> matches = primitiveList->findItems("Cube", Qt::MatchExactly);
+    QVERIFY(!matches.isEmpty());
+    primitiveList->setCurrentItem(matches.first());
+    createPrimitiveButton->click();
+
+    autoKeyButton->click();
+    QTRY_VERIFY(autoKeyButton->isChecked());
+
+    currentFrameSpinBox->setValue(5);
+    translateXSpinBox->setValue(2.0);
+    currentFrameSpinBox->setValue(10);
+    translateXSpinBox->setValue(4.0);
+
+    const QRect widgetRect = keyframeTimelineWidget->rect();
+    const int startX = widgetRect.left() + qRound(widgetRect.width() * (5.0 / 24.0));
+    const int endX = widgetRect.left() + qRound(widgetRect.width() * (10.0 / 24.0));
+    const int centerY = widgetRect.center().y();
+
+    QTest::mousePress(keyframeTimelineWidget, Qt::LeftButton, Qt::NoModifier, QPoint(startX, centerY));
+    QTest::mouseMove(keyframeTimelineWidget, QPoint(endX, centerY), 30);
+    QTest::mouseRelease(keyframeTimelineWidget, Qt::LeftButton, Qt::NoModifier, QPoint(endX, centerY));
+
+    QTRY_COMPARE(currentFrameSpinBox->value(), 10);
+    QTRY_VERIFY(timelineStatusLabel->text().contains("range 5-10 selected"));
 }
 
 void EditorUiTests::playbackControllerRoutesTimeIntentsAndTicks()

@@ -4,12 +4,12 @@
 
 #include <functional>
 
-#include "EditorAnimationController.h"
+#include "EditorAnimationTimelineViewModel.h"
 
 class QAction;
 class QLabel;
+class QMenu;
 class QPushButton;
-class QSlider;
 class QSpinBox;
 class KeyframeTimelineWidget;
 
@@ -27,6 +27,7 @@ public:
     void setViewModel(const EditorAnimationTimelineViewModel& viewModel);
 
     void setPlaybackRangeChangedCallback(std::function<void(int, int)> callback);
+    void setSelectedFrameRangeChangedCallback(std::function<void(int, int)> callback);
     void setCurrentFrameChangedCallback(std::function<void(int)> callback);
     void setJumpStartCallback(std::function<void()> callback);
     void setStepBackCallback(std::function<void()> callback);
@@ -44,19 +45,13 @@ public:
 
 private:
     void syncActionState(const EditorAnimationTimelineViewModel& viewModel);
+    void showTimelineContextMenu(const QPoint& position);
 
-    QSpinBox* playbackStartSpinBox_ = nullptr;
-    QSpinBox* playbackEndSpinBox_ = nullptr;
     QSpinBox* currentFrameSpinBox_ = nullptr;
-    QPushButton* autoKeyButton_ = nullptr;
-    QPushButton* setKeyButton_ = nullptr;
-    QPushButton* deleteKeyButton_ = nullptr;
     QPushButton* duplicateKeyButton_ = nullptr;
     QPushButton* shiftKeysLeftButton_ = nullptr;
     QPushButton* shiftKeysRightButton_ = nullptr;
-    QLabel* timelineStatusLabel_ = nullptr;
     KeyframeTimelineWidget* keyframeTimelineWidget_ = nullptr;
-    QSlider* timeSlider_ = nullptr;
     QPushButton* playPauseButton_ = nullptr;
     QPushButton* previousKeyButton_ = nullptr;
     QPushButton* nextKeyButton_ = nullptr;
@@ -65,8 +60,12 @@ private:
     QAction* shiftKeysRightAction_ = nullptr;
     QAction* previousKeyAction_ = nullptr;
     QAction* nextKeyAction_ = nullptr;
+    QMenu* timelineContextMenu_ = nullptr;
+    QAction* contextSetKeyAction_ = nullptr;
+    QAction* contextDeleteKeyAction_ = nullptr;
     bool updatingTimelineControls_ = false;
     std::function<void(int, int)> playbackRangeChangedCallback_;
+    std::function<void(int, int)> selectedFrameRangeChangedCallback_;
     std::function<void(int)> currentFrameChangedCallback_;
     std::function<void()> jumpStartCallback_;
     std::function<void()> stepBackCallback_;

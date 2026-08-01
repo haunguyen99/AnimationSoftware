@@ -6,25 +6,25 @@ Last updated: July 24, 2026
 
 Trong tai lieu kien truc, team dung `EditorShell` de chi `module` shell cap editor.
 
-`MainWindow` la lop `Qt Widgets` hien tai dang implement `EditorShell`.
+`EditorShell` la lop `Qt Widgets` hien tai dang implement `EditorShell`.
 
-Khong dung `EditorMainWindow` lam ten kien truc chinh trong docs, vi ten do qua gan voi adapter hien tai va lam mo ownership cap `module`.
+Khong dung `EditorEditorShell` lam ten kien truc chinh trong docs, vi ten do qua gan voi adapter hien tai va lam mo ownership cap `module`.
 
 ## Ownership
 
-`MainWindow` thuoc `Core/Application`.
+`EditorShell` thuoc `Core/Application`.
 
-`MainWindow` dong vai tro:
+`EditorShell` dong vai tro:
 
 * application shell
 * workspace shell
 * composition root
 
-`MainWindowContexts` cung thuoc `Core/Application` vi no la adapter gom context va dependency composition cho editor shell.
+`EditorShellContexts` cung thuoc `Core/Application` vi no la adapter gom context va dependency composition cho editor shell.
 
-## What Stays In MainWindow
+## What Stays In EditorShell
 
-`MainWindow` nen giu:
+`EditorShell` nen giu:
 
 * menu / toolbar / dock / panel assembly
 * Qt signal hookup
@@ -32,34 +32,34 @@ Khong dung `EditorMainWindow` lam ten kien truc chinh trong docs, vi ten do qua 
 * shell-level result application
 * shell-level status bar / script log feedback
 
-## What Does Not Belong To MainWindow
+## What Does Not Belong To EditorShell
 
-`MainWindow` khong phai feature module host.
+`EditorShell` khong phai feature module host.
 
-Vi vay, cac policy va workflow sau khong nen co canonical home trong `MainWindow`:
+Vi vay, cac policy va workflow sau khong nen co canonical home trong `EditorShell`:
 
 * `Animation` playback / key editing policy
 * `Rigging` mutation policy
 * `Scene` creation / selection / hierarchy policy
 * `Rendering` camera / display behavior beyond shell wiring
 
-Neu mot hanh vi co the song sau mot seam sau hon, `MainWindow` chi nen wire intent vao seam do.
+Neu mot hanh vi co the song sau mot seam sau hon, `EditorShell` chi nen wire intent vao seam do.
 
 ## File Map
 
 Current `EditorShell` ownership trong repo:
 
 * [apps/editor/main.cpp](</E:/Animation Software/apps/editor/main.cpp>)
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h>)
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
-* [apps/editor/include/MainWindowContexts.h](</E:/Animation Software/apps/editor/include/MainWindowContexts.h>)
-* [apps/editor/src/MainWindowContexts.cpp](</E:/Animation Software/apps/editor/src/MainWindowContexts.cpp>)
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
+* [src/core/app/EditorShellContexts.h](</E:/Animation Software/src/core/app/EditorShellContexts.h>)
+* [src/core/app/EditorShellContexts.cpp](</E:/Animation Software/src/core/app/EditorShellContexts.cpp>)
 
 ## Naming Rule
 
 Trong docs:
 
 * dung `EditorShell` khi noi ve `module` va ownership
-* dung `MainWindow` khi noi ve lop `Qt` cu the
+* dung `EditorShell` khi noi ve lop `Qt` cu the
 
 Dieu nay giup interface cua tai lieu sau hon: doi adapter sau nay khong doi ten `module`.

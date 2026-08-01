@@ -5,21 +5,12 @@
 
 #include <limits>
 
+#include "rigging/scene/SceneRiggingController.h"
 #include "scene/SceneMath.h"
 
 namespace
 {
 constexpr float kJointBoundsRadius = 0.2f;
-constexpr float kSkinWeightEpsilon = 0.0001f;
-
-Transform interpolateTransform(const Transform& a, const Transform& b, float t)
-{
-    Transform result;
-    result.translation = a.translation * (1.0f - t) + b.translation * t;
-    result.rotation = QQuaternion::slerp(a.rotation, b.rotation, t);
-    result.scale = a.scale * (1.0f - t) + b.scale * t;
-    return result;
-}
 
 Bounds3D jointBoundsAtPosition(const QVector3D& position)
 {
@@ -28,65 +19,6 @@ Bounds3D jointBoundsAtPosition(const QVector3D& position)
         position + QVector3D(kJointBoundsRadius, kJointBoundsRadius, kJointBoundsRadius));
 }
 
-SceneObject::Id nearestJointId(const QVector<SceneObject::Id>& jointIds, const QVector<QVector3D>& jointWorldPositions, const QVector3D& worldPosition)
-{
-    if (jointIds.isEmpty() || jointIds.size() != jointWorldPositions.size()) {
-        return 0;
-    }
-
-    float bestDistanceSquared = std::numeric_limits<float>::max();
-    SceneObject::Id bestJointId = 0;
-    for (int index = 0; index < jointIds.size(); ++index) {
-        const float distanceSquared = (jointWorldPositions.at(index) - worldPosition).lengthSquared();
-        if (distanceSquared < bestDistanceSquared) {
-            bestDistanceSquared = distanceSquared;
-            bestJointId = jointIds.at(index);
-        }
-    }
-
-    return bestJointId;
-}
-
-VertexSkinWeights normalizedVertexWeights(const VertexSkinWeights& inputWeights)
-{
-    QHash<SceneObject::Id, float> mergedWeights;
-    for (const SkinWeight& inputWeight : inputWeights) {
-        if (inputWeight.jointId == 0 || inputWeight.weight <= 0.0f) {
-            continue;
-        }
-
-        mergedWeights[inputWeight.jointId] += inputWeight.weight;
-    }
-
-    float totalWeight = 0.0f;
-    VertexSkinWeights outputWeights;
-    outputWeights.reserve(mergedWeights.size());
-    for (auto it = mergedWeights.cbegin(); it != mergedWeights.cend(); ++it) {
-        if (it.value() <= kSkinWeightEpsilon) {
-            continue;
-        }
-
-        totalWeight += it.value();
-        outputWeights.append(SkinWeight { it.key(), it.value() });
-    }
-
-    if (totalWeight <= 0.0f) {
-        return {};
-    }
-
-    for (SkinWeight& weight : outputWeights) {
-        weight.weight /= totalWeight;
-    }
-
-    std::sort(outputWeights.begin(), outputWeights.end(), [](const SkinWeight& lhs, const SkinWeight& rhs) {
-        if (lhs.weight == rhs.weight) {
-            return lhs.jointId < rhs.jointId;
-        }
-        return lhs.weight > rhs.weight;
-    });
-
-    return outputWeights;
-}
 }
 
 Scene::Scene() = default;
@@ -110,24 +42,7 @@ SceneObject::Id Scene::createObject(const QString& name, SceneObject::Kind kind)
 
 SceneObject::Id Scene::createJoint(const QString& name, SceneObject::Id parentId)
 {
-    if (parentId != 0 && !contains(parentId)) {
-        return 0;
-    }
-
-    const SceneObject::Id id = createObject(name.isEmpty() ? QString("joint_%1").arg(nextId_ - 1) : name, SceneObject::Kind::Joint);
-    if (parentId != 0 && !reparentObject(id, parentId)) {
-        removeObject(id);
-        return 0;
-    }
-
-    SceneObject* object = findObject(id);
-    if (object != nullptr) {
-        object->setHasBindPose(true);
-        object->setBindPoseLocalTransform(object->authoredTransform());
-    }
-
-    rebuildWorldData();
-    return id;
+    return SceneRiggingController::createJoint(*this, name, parentId);
 }
 
 bool Scene::contains(SceneObject::Id id) const
@@ -190,7 +105,7 @@ void Scene::clear()
     sceneBounds_.reset();
     nextId_ = 1;
     nextMeshHandle_ = 1;
-    currentFrame_ = 0;
+    animationState_.clear();
 }
 
 bool Scene::isEmpty() const
@@ -200,12 +115,12 @@ bool Scene::isEmpty() const
 
 int Scene::currentFrame() const
 {
-    return currentFrame_;
+    return animationState_.currentFrame();
 }
 
 void Scene::setCurrentFrame(int frame)
 {
-    currentFrame_ = frame;
+    animationState_.setCurrentFrame(frame);
     rebuildWorldData();
 }
 
@@ -227,17 +142,25 @@ bool Scene::setLocalTransform(SceneObject::Id id, const Transform& transform, bo
         return false;
     }
 
-    if (object->hasAnimation()) {
-        object->setTransformKeyframe(currentFrame_, transform);
-    } else if (autoKeyEnabled && currentFrame_ != 0) {
-        object->setTransformKeyframe(0, object->authoredTransform());
-        object->setTransformKeyframe(currentFrame_, transform);
-    } else {
-        object->setAuthoredTransform(transform);
+    animationState_.setLocalTransform(*object, transform, autoKeyEnabled);
+    rebuildWorldData();
+    return true;
+}
+
+bool Scene::setLocalTransformInteractive(SceneObject::Id id, const Transform& transform, bool autoKeyEnabled)
+{
+    SceneObject* object = findObject(id);
+    if (object == nullptr) {
+        return false;
     }
 
-    object->setLocalTransform(transform);
-    rebuildWorldData();
+    animationState_.setLocalTransform(*object, transform, autoKeyEnabled);
+
+    const QMatrix4x4 parentWorldMatrix = object->parentId() == 0
+        ? QMatrix4x4()
+        : worldTransform(object->parentId());
+    rebuildWorldDataForObject(id, parentWorldMatrix);
+    rebuildSceneBounds();
     return true;
 }
 
@@ -248,8 +171,7 @@ bool Scene::setObjectKeyframe(SceneObject::Id id, int frame)
         return false;
     }
 
-    object->setTransformKeyframe(frame, object->localTransform());
-    currentFrame_ = frame;
+    animationState_.setObjectKeyframe(*object, frame);
     rebuildWorldData();
     return true;
 }
@@ -261,7 +183,22 @@ bool Scene::removeObjectKeyframe(SceneObject::Id id, int frame)
         return false;
     }
 
-    if (!object->removeTransformKeyframe(frame)) {
+    if (!animationState_.removeObjectKeyframe(*object, frame)) {
+        return false;
+    }
+
+    rebuildWorldData();
+    return true;
+}
+
+bool Scene::removeObjectKeyframesInRange(SceneObject::Id id, int startFrame, int endFrame)
+{
+    SceneObject* object = findObject(id);
+    if (object == nullptr) {
+        return false;
+    }
+
+    if (!animationState_.removeObjectKeyframesInRange(*object, startFrame, endFrame)) {
         return false;
     }
 
@@ -272,11 +209,10 @@ bool Scene::removeObjectKeyframe(SceneObject::Id id, int frame)
 bool Scene::duplicateObjectKeyframe(SceneObject::Id id, int sourceFrame, int targetFrame)
 {
     SceneObject* object = findObject(id);
-    if (object == nullptr || !object->duplicateTransformKeyframe(sourceFrame, targetFrame)) {
+    if (object == nullptr || !animationState_.duplicateObjectKeyframe(*object, sourceFrame, targetFrame)) {
         return false;
     }
 
-    currentFrame_ = targetFrame;
     rebuildWorldData();
     return true;
 }
@@ -284,11 +220,39 @@ bool Scene::duplicateObjectKeyframe(SceneObject::Id id, int sourceFrame, int tar
 bool Scene::offsetObjectKeyframes(SceneObject::Id id, int frameDelta)
 {
     SceneObject* object = findObject(id);
-    if (object == nullptr || !object->offsetAllTransformKeyframes(frameDelta)) {
+    if (object == nullptr || !animationState_.offsetObjectKeyframes(*object, frameDelta)) {
         return false;
     }
 
-    currentFrame_ += frameDelta;
+    rebuildWorldData();
+    return true;
+}
+
+bool Scene::offsetObjectKeyframesInRange(SceneObject::Id id, int startFrame, int endFrame, int frameDelta)
+{
+    SceneObject* object = findObject(id);
+    if (object == nullptr || !animationState_.offsetObjectKeyframesInRange(*object, startFrame, endFrame, frameDelta)) {
+        return false;
+    }
+
+    rebuildWorldData();
+    return true;
+}
+
+bool Scene::scaleAllObjectKeyframes(double scaleFactor)
+{
+    bool changed = false;
+    for (SceneObject::Id objectId : allObjectIds()) {
+        SceneObject* object = findObject(objectId);
+        if (object != nullptr && object->scaleAllTransformKeyframes(scaleFactor)) {
+            changed = true;
+        }
+    }
+
+    if (!changed) {
+        return false;
+    }
+
     rebuildWorldData();
     return true;
 }
@@ -296,13 +260,13 @@ bool Scene::offsetObjectKeyframes(SceneObject::Id id, int frameDelta)
 int Scene::nextObjectKeyframe(SceneObject::Id id, int frame) const
 {
     const SceneObject* object = findObject(id);
-    return object == nullptr ? frame : object->nextTransformKeyframeAfter(frame);
+    return object == nullptr ? frame : animationState_.nextObjectKeyframe(*object, frame);
 }
 
 int Scene::previousObjectKeyframe(SceneObject::Id id, int frame) const
 {
     const SceneObject* object = findObject(id);
-    return object == nullptr ? frame : object->previousTransformKeyframeBefore(frame);
+    return object == nullptr ? frame : animationState_.previousObjectKeyframe(*object, frame);
 }
 
 bool Scene::setObjectVisible(SceneObject::Id id, bool visible)
@@ -318,258 +282,42 @@ bool Scene::setObjectVisible(SceneObject::Id id, bool visible)
 
 bool Scene::setJointOrientation(SceneObject::Id id, const QQuaternion& orientation)
 {
-    SceneObject* object = findObject(id);
-    if (object == nullptr || !object->isJoint()) {
-        return false;
-    }
-
-    object->setJointOrientation(orientation);
-    rebuildWorldData();
-    return true;
+    return SceneRiggingController::setJointOrientation(*this, id, orientation);
 }
 
 bool Scene::resetJointOrientation(SceneObject::Id id)
 {
-    return setJointOrientation(id, QQuaternion());
+    return SceneRiggingController::resetJointOrientation(*this, id);
 }
 
 bool Scene::alignJointOrientationToChild(SceneObject::Id id)
 {
-    SceneObject* object = findObject(id);
-    if (object == nullptr || !object->isJoint() || object->childIds().isEmpty()) {
-        return false;
-    }
-
-    const SceneObject* child = findObject(object->childIds().first());
-    if (child == nullptr) {
-        return false;
-    }
-
-    const QVector3D aimVector = child->localTransform().translation.normalized();
-    if (aimVector.lengthSquared() < 0.0001f) {
-        object->setJointOrientation(QQuaternion());
-    } else {
-        object->setJointOrientation(QQuaternion::rotationTo(QVector3D(1.0f, 0.0f, 0.0f), aimVector));
-    }
-
-    rebuildWorldData();
-    return true;
+    return SceneRiggingController::alignJointOrientationToChild(*this, id);
 }
 
 bool Scene::captureBindPose(SceneObject::Id id, bool recursive)
 {
-    SceneObject* object = findObject(id);
-    if (object == nullptr || !object->isJoint()) {
-        return false;
-    }
-
-    object->setBindPoseLocalTransform(object->localTransform());
-    object->setHasBindPose(true);
-
-    if (recursive) {
-        for (SceneObject::Id childId : object->childIds()) {
-            const SceneObject* child = findObject(childId);
-            if (child != nullptr && child->isJoint()) {
-                captureBindPose(childId, true);
-            }
-        }
-    }
-
-    return true;
+    return SceneRiggingController::captureBindPose(*this, id, recursive);
 }
 
 bool Scene::bindObjectToSkeleton(SceneObject::Id objectId, SceneObject::Id rootJointId)
 {
-    SceneObject* object = findObject(objectId);
-    const SceneObject* rootJoint = findObject(rootJointId);
-    if (object == nullptr || rootJoint == nullptr || !rootJoint->isJoint() || object->meshHandles().isEmpty()) {
-        return false;
-    }
-
-    const QVector<SceneObject::Id> jointIds = collectJointSubtree(rootJointId);
-    if (jointIds.isEmpty()) {
-        return false;
-    }
-
-    captureBindPose(rootJointId, true);
-    object->setSkinBindLocalTransform(object->localTransform());
-
-    QVector<QVector3D> jointWorldPositions;
-    jointWorldPositions.reserve(jointIds.size());
-    for (SceneObject::Id jointId : jointIds) {
-        jointWorldPositions.append(worldTransform(jointId) * QVector3D(0.0f, 0.0f, 0.0f));
-    }
-
-    const QMatrix4x4 objectWorld = worldTransform(objectId);
-    SkinWeightTable weights;
-    for (int meshHandle : object->meshHandles()) {
-        const MeshData* mesh = findMesh(meshHandle);
-        if (mesh == nullptr) {
-            return false;
-        }
-
-        for (const QVector3D& localPosition : mesh->positions) {
-            const QVector3D worldPosition = objectWorld * localPosition;
-            const SceneObject::Id jointId = nearestJointId(jointIds, jointWorldPositions, worldPosition);
-            if (jointId == 0) {
-                return false;
-            }
-
-            weights.append(VertexSkinWeights { SkinWeight { jointId, 1.0f } });
-        }
-    }
-
-    return setObjectSkinBinding(objectId, jointIds, weights);
+    return SceneRiggingController::bindObjectToSkeleton(*this, objectId, rootJointId);
 }
 
 bool Scene::setObjectSkinBinding(SceneObject::Id id, const QVector<SceneObject::Id>& jointIds, const SkinWeightTable& weights)
 {
-    SceneObject* object = findObject(id);
-    if (object == nullptr || object->meshHandles().isEmpty()) {
-        return false;
-    }
-
-    if (jointIds.isEmpty() || weights.isEmpty()) {
-        return false;
-    }
-
-    int vertexCount = 0;
-    for (int meshHandle : object->meshHandles()) {
-        const MeshData* mesh = findMesh(meshHandle);
-        if (mesh == nullptr) {
-            return false;
-        }
-        vertexCount += mesh->positions.size();
-    }
-
-    if (weights.size() != vertexCount) {
-        return false;
-    }
-
-    for (SceneObject::Id jointId : jointIds) {
-        const SceneObject* joint = findObject(jointId);
-        if (joint == nullptr || !joint->isJoint()) {
-            return false;
-        }
-    }
-
-    SkinWeightTable normalizedWeights;
-    normalizedWeights.reserve(weights.size());
-    for (const VertexSkinWeights& vertexWeights : weights) {
-        const VertexSkinWeights normalizedWeightsForVertex = normalizedVertexWeights(vertexWeights);
-        if (normalizedWeightsForVertex.isEmpty()) {
-            return false;
-        }
-
-        float weightSum = 0.0f;
-        for (const SkinWeight& weight : normalizedWeightsForVertex) {
-            if (weight.jointId == 0 || !jointIds.contains(weight.jointId) || weight.weight < 0.0f) {
-                return false;
-            }
-            weightSum += weight.weight;
-        }
-
-        if (std::abs(weightSum - 1.0f) > 0.001f) {
-            return false;
-        }
-
-        normalizedWeights.append(normalizedWeightsForVertex);
-    }
-
-    object->setHasSkinBinding(true);
-    object->setSkinBindLocalTransform(object->localTransform());
-    object->setSkinJointIds(jointIds);
-    object->setSkinWeights(normalizedWeights);
-    return true;
+    return SceneRiggingController::setObjectSkinBinding(*this, id, jointIds, weights);
 }
 
 bool Scene::clearObjectSkinBinding(SceneObject::Id id)
 {
-    SceneObject* object = findObject(id);
-    if (object == nullptr) {
-        return false;
-    }
-
-    object->clearSkinBinding();
-    return true;
+    return SceneRiggingController::clearObjectSkinBinding(*this, id);
 }
 
 bool Scene::buildDeformedMesh(SceneObject::Id objectId, int meshHandle, MeshData* deformedMesh) const
 {
-    if (deformedMesh == nullptr) {
-        return false;
-    }
-
-    const SceneObject* object = findObject(objectId);
-    const MeshData* mesh = findMesh(meshHandle);
-    if (object == nullptr || mesh == nullptr) {
-        return false;
-    }
-
-    *deformedMesh = *mesh;
-    if (!object->hasSkinBinding()) {
-        return true;
-    }
-
-    int vertexOffset = 0;
-    bool foundHandle = false;
-    for (int objectMeshHandle : object->meshHandles()) {
-        const MeshData* objectMesh = findMesh(objectMeshHandle);
-        if (objectMesh == nullptr) {
-            return false;
-        }
-
-        if (objectMeshHandle == meshHandle) {
-            foundHandle = true;
-            break;
-        }
-
-        vertexOffset += objectMesh->positions.size();
-    }
-
-    if (!foundHandle || object->skinWeights().size() < vertexOffset + mesh->positions.size()) {
-        return false;
-    }
-
-    const QMatrix4x4 objectBindWorld = bindPoseWorldTransform(objectId);
-    const QMatrix3x3 objectBindNormal = objectBindWorld.normalMatrix();
-    deformedMesh->positions.resize(mesh->positions.size());
-    deformedMesh->normals.resize(mesh->normals.size());
-
-    for (int vertexIndex = 0; vertexIndex < mesh->positions.size(); ++vertexIndex) {
-        const VertexSkinWeights& vertexWeights = object->skinWeights().at(vertexOffset + vertexIndex);
-        QVector3D skinnedPosition;
-        QVector3D skinnedNormal;
-
-        const QVector3D bindPosition = objectBindWorld * mesh->positions.at(vertexIndex);
-        const QVector3D sourceNormal = vertexIndex < mesh->normals.size()
-            ? mesh->normals.at(vertexIndex)
-            : QVector3D(0.0f, 1.0f, 0.0f);
-        const QVector3D bindNormal = QVector3D(
-            objectBindNormal(0, 0) * sourceNormal.x() + objectBindNormal(0, 1) * sourceNormal.y() + objectBindNormal(0, 2) * sourceNormal.z(),
-            objectBindNormal(1, 0) * sourceNormal.x() + objectBindNormal(1, 1) * sourceNormal.y() + objectBindNormal(1, 2) * sourceNormal.z(),
-            objectBindNormal(2, 0) * sourceNormal.x() + objectBindNormal(2, 1) * sourceNormal.y() + objectBindNormal(2, 2) * sourceNormal.z()).normalized();
-
-        for (const SkinWeight& weight : vertexWeights) {
-            const QMatrix4x4 jointWorld = worldTransform(weight.jointId);
-            const QMatrix4x4 inverseBindJointWorld = bindPoseWorldTransform(weight.jointId).inverted();
-            const QMatrix4x4 skinMatrix = jointWorld * inverseBindJointWorld;
-            skinnedPosition += (skinMatrix * bindPosition) * weight.weight;
-            skinnedNormal += skinMatrix.mapVector(bindNormal) * weight.weight;
-        }
-
-        deformedMesh->positions[vertexIndex] = skinnedPosition;
-        if (vertexIndex < deformedMesh->normals.size()) {
-            deformedMesh->normals[vertexIndex] = skinnedNormal.normalized();
-        }
-    }
-
-    deformedMesh->bounds.reset();
-    for (const QVector3D& position : deformedMesh->positions) {
-        deformedMesh->bounds.expandToInclude(position);
-    }
-
-    return true;
+    return SceneRiggingController::buildDeformedMesh(*this, objectId, meshHandle, deformedMesh);
 }
 
 bool Scene::reparentObject(SceneObject::Id id, SceneObject::Id newParentId, bool keepWorldTransform)
@@ -631,7 +379,7 @@ bool Scene::reparentObject(SceneObject::Id id, SceneObject::Id newParentId, bool
         object->setLocalTransform(updatedTransform);
         object->setAuthoredTransform(updatedTransform);
         if (object->hasAnimation()) {
-            object->setTransformKeyframe(currentFrame_, updatedTransform);
+            object->setTransformKeyframe(animationState_.currentFrame(), updatedTransform);
         }
     }
 
@@ -910,41 +658,7 @@ QMatrix4x4 Scene::worldTransform(SceneObject::Id id) const
 
 QMatrix4x4 Scene::bindPoseWorldTransform(SceneObject::Id id) const
 {
-    const SceneObject* object = findObject(id);
-    if (object == nullptr) {
-        return QMatrix4x4();
-    }
-
-    QVector<SceneObject::Id> chain;
-    chain.reserve(16);
-
-    const SceneObject* current = object;
-    while (current != nullptr) {
-        chain.append(current->id());
-        current = current->parentId() == 0 ? nullptr : findObject(current->parentId());
-    }
-
-    QMatrix4x4 worldMatrix;
-    for (auto it = chain.crbegin(); it != chain.crend(); ++it) {
-        const SceneObject* chainObject = findObject(*it);
-        if (chainObject == nullptr) {
-            continue;
-        }
-
-        Transform bindTransform = chainObject->localTransform();
-        if (chainObject->isJoint() && chainObject->hasBindPose()) {
-            bindTransform = chainObject->bindPoseLocalTransform();
-            bindTransform.rotation = chainObject->jointOrientation() * bindTransform.rotation;
-        } else if (chainObject->hasSkinBinding()) {
-            bindTransform = chainObject->skinBindLocalTransform();
-        } else {
-            bindTransform = composeObjectLocalTransform(*chainObject, chainObject->localTransform());
-        }
-
-        worldMatrix *= SceneMath::composeMatrix(bindTransform);
-    }
-
-    return worldMatrix;
+    return SceneRiggingController::bindPoseWorldTransform(*this, id);
 }
 
 void Scene::rebuildSceneBounds()
@@ -978,7 +692,7 @@ void Scene::rebuildWorldDataForObject(SceneObject::Id objectId, const QMatrix4x4
         return;
     }
 
-    const Transform evaluatedTransform = evaluateObjectTransformAtFrame(*object, currentFrame_);
+    const Transform evaluatedTransform = animationState_.evaluateObjectTransformAtCurrentFrame(*object);
     object->setLocalTransform(evaluatedTransform);
     const Transform composedTransform = composeObjectLocalTransform(*object, evaluatedTransform);
     const QMatrix4x4 worldMatrix = parentWorldMatrix * SceneMath::composeMatrix(composedTransform);
@@ -991,60 +705,6 @@ void Scene::rebuildWorldDataForObject(SceneObject::Id objectId, const QMatrix4x4
     for (SceneObject::Id childId : object->childIds()) {
         rebuildWorldDataForObject(childId, worldMatrix);
     }
-}
-
-Transform Scene::evaluateObjectTransformAtFrame(const SceneObject& object, int frame) const
-{
-    const TransformKeyframeTrack& keyframes = object.transformKeyframes();
-    if (keyframes.isEmpty()) {
-        return object.authoredTransform();
-    }
-
-    if (frame <= keyframes.first().frame) {
-        return keyframes.first().transform;
-    }
-
-    if (frame >= keyframes.last().frame) {
-        return keyframes.last().transform;
-    }
-
-    for (int index = 0; index < keyframes.size() - 1; ++index) {
-        const TransformKeyframe& a = keyframes.at(index);
-        const TransformKeyframe& b = keyframes.at(index + 1);
-        if (frame < a.frame || frame > b.frame) {
-            continue;
-        }
-
-        if (a.frame == b.frame) {
-            return b.transform;
-        }
-
-        const float t = static_cast<float>(frame - a.frame) / static_cast<float>(b.frame - a.frame);
-        return interpolateTransform(a.transform, b.transform, t);
-    }
-
-    return object.authoredTransform();
-}
-
-QVector<SceneObject::Id> Scene::collectJointSubtree(SceneObject::Id rootJointId) const
-{
-    QVector<SceneObject::Id> joints;
-    const SceneObject* rootJoint = findObject(rootJointId);
-    if (rootJoint == nullptr || !rootJoint->isJoint()) {
-        return joints;
-    }
-
-    joints.append(rootJointId);
-    for (SceneObject::Id childId : rootJoint->childIds()) {
-        const SceneObject* child = findObject(childId);
-        if (child == nullptr || !child->isJoint()) {
-            continue;
-        }
-
-        joints += collectJointSubtree(childId);
-    }
-
-    return joints;
 }
 
 Transform Scene::composeObjectLocalTransform(const SceneObject& object, const Transform& baseTransform) const

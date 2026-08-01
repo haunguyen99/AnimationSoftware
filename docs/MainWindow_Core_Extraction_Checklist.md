@@ -1,10 +1,10 @@
-# MainWindow Core Extraction Checklist
+# EditorShell Core Extraction Checklist
 
 Last updated: July 24, 2026
 
 ## Purpose
 
-Track the ongoing work to extract feature logic out of `MainWindow` and reduce it to a `Core/Application` shell.
+Track the ongoing work to extract feature logic out of `EditorShell` and reduce it to a `Core/Application` shell.
 
 Use this file as the single progress log:
 - Tick a checkbox when a ticket is done.
@@ -13,8 +13,8 @@ Use this file as the single progress log:
 
 ## Target Architecture
 
-- `MainWindow` belongs to `Core/Application`
-- `MainWindow` acts as:
+- `EditorShell` belongs to `Core/Application`
+- `EditorShell` acts as:
   - application shell
   - workspace shell
   - composition root
@@ -33,14 +33,14 @@ Use this file as the single progress log:
 - `Done`: implemented and verified
 - `Blocked`: needs a decision or prerequisite
 
-## Epic A: Shrink MainWindow To Core/Application
+## Epic A: Shrink EditorShell To Core/Application
 
 - [x] `A1` Split `createMenus()` into section helpers: `createFileMenu()`, `createCreateMenu()`, `createRigMenu()`, `createWindowsMenu()`, `createAnimationMenu()`
 - [x] `A2` Keep `createMenus()` as high-level orchestration only
 - [x] `A3` Split `createToolbar()` into section helpers: import/create, rig, view, transform, display
 - [x] `A4` Split `createDocks()` into panel helpers: outliner, inspector, primitive palette, script editor, timeline
-- [x] `A5` Review and remove remaining repeated plumbing patterns in `MainWindow`
-- [x] `A6` Confirm `MainWindow` is reduced to composition root plus UI shell responsibilities
+- [x] `A5` Review and remove remaining repeated plumbing patterns in `EditorShell`
+- [x] `A6` Confirm `EditorShell` is reduced to composition root plus UI shell responsibilities
 
 ## Epic B: File/Core Shell Decomposition
 
@@ -81,22 +81,22 @@ Use this file as the single progress log:
 
 - [x] `G1` Extract outliner dock builder from `createDocks()`
 - [x] `G2` Extract inspector/channel box dock builder from `createDocks()`
-- [x] `G3` Review remaining selection refresh paths in `MainWindow`
+- [x] `G3` Review remaining selection refresh paths in `EditorShell`
 - [x] `G4` Consolidate scene refresh and reselection orchestration helpers if useful
 
 ## Epic H: Context And Composition Cleanup
 
 - [x] `H1` Audit all remaining `create*Context()` helpers
-- [x] `H2` Move context factories to `MainWindowContexts` or `EditorContextFactory` if the count keeps growing
-- [x] `H3` Reduce inline lambda composition in `MainWindow` where practical
+- [x] `H2` Move context factories to `EditorShellContexts` or `EditorContextFactory` if the count keeps growing
+- [x] `H3` Reduce inline lambda composition in `EditorShell` where practical
 - [x] `H4` Keep context factories owned by `Core/Application`, not by feature modules
 
 ## Epic I: Ownership And Documentation
 
-- [x] `I1` Document `MainWindow` as part of `Core/Application`
-- [x] `I2` Decide whether to rename the concept in docs to `EditorShell` or `EditorMainWindow`
-- [x] `I3` Update ownership docs so `MainWindow` is no longer treated as a feature module host
-- [x] `I4` Add a short architectural note that `MainWindow` is the composition root plus UI shell
+- [x] `I1` Document `EditorShell` as part of `Core/Application`
+- [x] `I2` Decide whether to rename the concept in docs to `EditorShell` or `EditorEditorShell`
+- [x] `I3` Update ownership docs so `EditorShell` is no longer treated as a feature module host
+- [x] `I4` Add a short architectural note that `EditorShell` is the composition root plus UI shell
 
 ## Epic J: Verification Discipline
 
@@ -130,8 +130,8 @@ Use this file as the single progress log:
 | 2026-07-23 | `A2` | Done | Reduced `createMenus()` to high-level section orchestration only | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
 | 2026-07-23 | `A3` | Done | Split toolbar assembly into import/create, rig, view, transform, and display section helpers | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
 | 2026-07-23 | `A4` | Done | Split dock assembly into outliner, inspector, primitive palette, script editor, and timeline dock helpers | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
-| 2026-07-23 | `A5` | Done | Consolidated repeated MainWindow shell plumbing with shared QAction and QDockWidget configuration helpers | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
-| 2026-07-23 | `A6` | Done | Audited remaining MainWindow responsibilities and confirmed they are now primarily UI shell, composition, and orchestration concerns | No code change; based on post-refactor ownership review after verified `A1`-`A5` |
+| 2026-07-23 | `A5` | Done | Consolidated repeated EditorShell shell plumbing with shared QAction and QDockWidget configuration helpers | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
+| 2026-07-23 | `A6` | Done | Audited remaining EditorShell responsibilities and confirmed they are now primarily UI shell, composition, and orchestration concerns | No code change; based on post-refactor ownership review after verified `A1`-`A5` |
 | 2026-07-23 | `B1` | Done | `File` menu wiring is isolated in `createFileMenu()` | Verified during Epic A and retained after Epic B cleanup |
 | 2026-07-23 | `B2` | Done | Moved `Optimize Scene Size` action behavior into `optimizeSceneStorage()` | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
 | 2026-07-23 | `B3` | Done | Simplified file actions to shell-level orchestration using `applyDocumentSceneLoad(...)` and `showDocumentOperationFailure(...)` | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
@@ -147,34 +147,34 @@ Use this file as the single progress log:
 | 2026-07-24 | `E1` | Done | `Animation` menu wiring already lives in `createAnimationMenu()` | Ownership review against current code paths |
 | 2026-07-24 | `E2` | Done | Timeline dock builder already lives in `createTimelineDock()` | Ownership review against current code paths |
 | 2026-07-24 | `E3` | Done | Timeline panel wiring is already concentrated in `createTimeSliderPanel()` and `AnimationTimelinePanel` owns widget-level timeline behavior | Ownership review against current code paths |
-| 2026-07-24 | `E4` | Done | Playback and keyframe shell actions route through `EditorAnimationFlowController` and `EditorAnimationController` | Ownership review against current code paths |
+| 2026-07-24 | `E4` | Done | Playback and keyframe shell actions route through `src/animation/editor/EditorAnimationFlowController` and `EditorAnimationController` | Ownership review against current code paths |
 | 2026-07-24 | `F2` | Done | View and display toolbar sections already live in `addViewToolbarSection()` and `addDisplayToolbarSection()` | Ownership review after Epic A refactor |
 | 2026-07-24 | `F3` | Done | Replaced long inline view/display lambdas with named shell methods for camera reset, frame scene, and display toggles | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
-| 2026-07-24 | `F4` | Done | Camera/view/display shell ownership remains in `MainWindow` as shell wiring, while rendering/viewport behavior routes through viewport UI seams | Ownership review against current code paths |
+| 2026-07-24 | `F4` | Done | Camera/view/display shell ownership remains in `EditorShell` as shell wiring, while rendering/viewport behavior routes through viewport UI seams | Ownership review against current code paths |
 | 2026-07-24 | `G1` | Done | Outliner dock builder already lives in `createOutlinerDock()` with panel composition in `createOutlinerPanel()` | Ownership review after Epic A refactor |
 | 2026-07-24 | `G2` | Done | Inspector/channel box dock builder already lives in `createInspectorDock()` with panel composition in `createInspectorPanel()` | Ownership review after Epic A refactor |
 | 2026-07-24 | `G3` | Done | Reviewed remaining selection refresh paths and concentrated them around `refreshScenePanels()`, `restoreSelectionAfterSceneRefresh(...)`, and selection shell methods | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
 | 2026-07-24 | `G4` | Done | Added shared reselection orchestration helpers and reused them across history, animation, rigging, and script-driven scene mutation flows | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
 | 2026-07-24 | `H1` | Done | Audited remaining shell context helpers and identified the shallow adapter cluster around selection, channel box, rigging, outliner, viewport UI, and animation flow composition | Ownership review before extraction |
-| 2026-07-24 | `H2` | Done | Moved context factory implementation into `MainWindowContexts` so `MainWindow` no longer owns the low-level adapter assembly details | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
-| 2026-07-24 | `H3` | Done | Reduced inline lambda composition in `MainWindow.cpp` by delegating context assembly to `MainWindowContexts` and keeping only thin shell wrappers | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
-| 2026-07-24 | `H4` | Done | Kept context factory ownership in `Core/Application` by introducing `apps/editor/.../MainWindowContexts.*` instead of pushing adapters into feature modules | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
-| 2026-07-24 | `I1` | Done | Documented `MainWindow` ownership under `Core/Application` in the new editor shell ownership note and aligned existing shell docs | Documentation-only ownership review |
-| 2026-07-24 | `I2` | Done | Chose `EditorShell` as the architectural concept name, while keeping `MainWindow` as the concrete Qt class name | Documentation-only naming decision |
-| 2026-07-24 | `I3` | Done | Updated ownership-facing docs so `MainWindow` is described as an editor shell adapter rather than a feature module host | Documentation-only ownership review |
-| 2026-07-24 | `I4` | Done | Added a short architectural note clarifying that `MainWindow` is the composition root plus UI shell | Documentation-only architectural note |
+| 2026-07-24 | `H2` | Done | Moved context factory implementation into `EditorShellContexts` so `EditorShell` no longer owns the low-level adapter assembly details | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
+| 2026-07-24 | `H3` | Done | Reduced inline lambda composition in `EditorShell.cpp` by delegating context assembly to `EditorShellContexts` and keeping only thin shell wrappers | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
+| 2026-07-24 | `H4` | Done | Kept context factory ownership in `Core/Application` by introducing `apps/editor/.../EditorShellContexts.*` instead of pushing adapters into feature modules | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
+| 2026-07-24 | `I1` | Done | Documented `EditorShell` ownership under `Core/Application` in the new editor shell ownership note and aligned existing shell docs | Documentation-only ownership review |
+| 2026-07-24 | `I2` | Done | Chose `EditorShell` as the architectural concept name, while keeping `EditorShell` as the concrete Qt class name | Documentation-only naming decision |
+| 2026-07-24 | `I3` | Done | Updated ownership-facing docs so `EditorShell` is described as an editor shell adapter rather than a feature module host | Documentation-only ownership review |
+| 2026-07-24 | `I4` | Done | Added a short architectural note clarifying that `EditorShell` is the composition root plus UI shell | Documentation-only architectural note |
 | 2026-07-24 | `J1` | Done | Formalized build verification rule for code-touching editor shell tickets in `Editor_Shell_Verification_Discipline.md` | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
 | 2026-07-24 | `J2` | Done | Formalized test verification rule for code-touching editor shell tickets in `Editor_Shell_Verification_Discipline.md` | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
 | 2026-07-24 | `J3` | Done | Recorded targeted script editor regression surface around `EditorUiTests` and script command registry dispatch tests | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
 | 2026-07-24 | `J4` | Done | Recorded lambda capture and object lifetime review rule for UI wiring changes in editor shell seams | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
-| 2026-07-24 | `P1` | Done | Moved playback clock, frame stepping, playback range, and play/stop intent routing out of `MainWindow` into `EditorPlaybackController` | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
-| 2026-07-24 | `P2` | Done | Moved scene apply, current-frame reapply, selection restore, and frame-scene runtime orchestration out of `MainWindow` into `EditorSceneRuntimeController` | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
+| 2026-07-24 | `P1` | Done | Moved playback clock, frame stepping, playback range, and play/stop intent routing out of `EditorShell` into `EditorPlaybackController` | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
+| 2026-07-24 | `P2` | Done | Moved scene apply, current-frame reapply, selection restore, and frame-scene runtime orchestration out of `EditorShell` into `EditorSceneRuntimeController` | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
 | 2026-07-24 | `P3` | Done | Moved viewport scene mutation and authoring runtime seam out of `ViewportWidget` into `EditorViewportSceneController` | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
-| 2026-07-24 | `P4` | Done | Routed UI and script key-edit flows through `EditorAnimationEngineFacade`, leaving `EditorAnimationController` as pure animation logic and `EditorAnimationFlowController` as pure intent shaping | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
+| 2026-07-24 | `P4` | Done | Routed UI and script key-edit flows through `EditorAnimationEngineFacade`, leaving `EditorAnimationController` as pure animation logic and `src/animation/editor/EditorAnimationFlowController` as pure intent shaping | `tools\build_debug.ps1`, `ctest --test-dir build\ninja-msvc-debug --output-on-failure` |
 
 ## Current Snapshot
 
-- `MainWindow` has already been reduced significantly in:
+- `EditorShell` has already been reduced significantly in:
   - script binding composition
   - result application plumbing
   - view/transform menu shell decomposition
@@ -182,7 +182,7 @@ Use this file as the single progress log:
   - toolbar section decomposition
   - dock section decomposition
   - shared action and dock shell configuration helpers
-- `MainWindow` now mostly owns:
+- `EditorShell` now mostly owns:
   - shell-level menu, toolbar, dock, and panel construction
   - Qt signal hookup
   - context and dependency composition
@@ -190,9 +190,9 @@ Use this file as the single progress log:
   - result application and shell-level status/log feedback
 - `EditorShell` ownership is now documented explicitly:
   - `EditorShell` la ten `module` kien truc trong docs
-  - `MainWindow` la adapter `Qt Widgets` hien tai cua `EditorShell`
-  - `MainWindow` va `MainWindowContexts` thuoc `Core/Application`
-  - `MainWindow` khong duoc xem la feature module host
+  - `EditorShell` la adapter `Qt Widgets` hien tai cua `EditorShell`
+  - `EditorShell` va `EditorShellContexts` thuoc `Core/Application`
+  - `EditorShell` khong duoc xem la feature module host
 - Verification discipline is now documented explicitly:
   - build + test la bat buoc cho ticket co doi code trong editor shell
   - ticket touch script binding phai re-check targeted script editor test surface
@@ -229,5 +229,5 @@ Use this file as the single progress log:
   - view and display toolbar sections live in dedicated toolbar helpers
   - long view/display lambdas have been replaced by named shell methods
   - rendering behavior routes through viewport UI seams, while viewport scene mutations now route through `EditorViewportSceneController`
-- Remaining work is no longer about removing large domain logic from `MainWindow`; it is mostly follow-up refinement under later epics:
+- Remaining work is no longer about removing large domain logic from `EditorShell`; it is mostly follow-up refinement under later epics:
   - no open extraction epic in checklist

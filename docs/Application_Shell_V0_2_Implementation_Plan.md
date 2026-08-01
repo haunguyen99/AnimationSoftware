@@ -22,7 +22,7 @@ Gate status:
 
 Muc tieu:
 
-* khoa layout `MainWindow`
+* khoa layout `EditorShell`
 * giu `Viewport` o giua
 * dat cho `Outliner` ben trai
 * dat cho `Inspector` ben phai
@@ -91,7 +91,7 @@ Muc tieu:
 
 Output:
 
-* contract ro giua `MainWindow` va panel state
+* contract ro giua `EditorShell` va panel state
 
 ---
 
@@ -115,7 +115,7 @@ Reason:
 
 Phu thuoc san co:
 
-* `MainWindow`
+* `EditorShell`
 * `ViewportWidget`
 * `Scene`
 * `FEATURE_WORKFLOW.md`
@@ -168,8 +168,8 @@ Reason:
 
 ## Risks
 
-* `MainWindow` tiep tuc phinh
-* panel host trong `MainWindow` co the thanh shallow module
+* `EditorShell` tiep tuc phinh
+* panel host trong `EditorShell` co the thanh shallow module
 * shell refresh contract mo ho -> ve sau de leak policy vao nhieu noi
 
 Risk control:

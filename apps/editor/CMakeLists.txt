@@ -2,34 +2,46 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGLWidgets OpenGL Gui)
 
 add_executable(phoenix_editor
     src/AnimationTimelinePanel.cpp
-    src/EditorAnimationEngineFacade.cpp
     src/EditorAnimationController.cpp
-    src/EditorAnimationFlowController.cpp
+    src/EditorAnimationTimelineViewBuilder.cpp
     src/EditorChannelBoxController.cpp
     src/EditorCreationController.cpp
     src/EditorDocumentController.cpp
     src/EditorFileFlowController.cpp
-    src/EditorHistoryController.cpp
     src/EditorInspectorController.cpp
     src/EditorOutlinerController.cpp
-    src/EditorPlaybackController.cpp
-    src/EditorRiggingController.cpp
     src/EditorSceneQueryController.cpp
-    src/EditorSceneRuntimeController.cpp
     src/EditorSelectionController.cpp
     src/EditorScriptExecutionController.cpp
     src/EditorScriptLogController.cpp
     src/EditorViewportUiController.cpp
     src/EditorSceneMutationController.cpp
     src/EditorViewportCommandController.cpp
-    src/EditorViewportSceneController.cpp
+    src/GraphEditorPanel.cpp
     main.cpp
     src/KeyframeTimelineWidget.cpp
-    src/MainWindow.cpp
-    src/MainWindowContexts.cpp
-    src/ScriptCommandSystem.cpp
+    src/RangeSliderPanel.cpp
     src/ViewportWidget.cpp
     src/ViewportWorkspaceWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/app/EditorShell.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/app/EditorShellContexts.cpp
+    ${CMAKE_SOURCE_DIR}/src/animation/editor/EditorAnimationFlowController.cpp
+    ${CMAKE_SOURCE_DIR}/src/animation/editor/EditorAnimationSceneMutation.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/editor/EditorRiggingController.cpp
+    ${CMAKE_SOURCE_DIR}/src/animation/data/ObjectAnimationState.cpp
+    ${CMAKE_SOURCE_DIR}/src/animation/scene/SceneAnimationState.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/data/ObjectRigState.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/scene/JointRiggingOps.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/scene/SkinBindingOps.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/scene/SkinDeformationOps.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/scene/SceneRiggingController.cpp
+    ${CMAKE_SOURCE_DIR}/src/engine/animation/EditorAnimationEngineFacade.cpp
+    ${CMAKE_SOURCE_DIR}/src/engine/playback/EditorPlaybackController.cpp
+    ${CMAKE_SOURCE_DIR}/src/engine/runtime/EditorSceneRuntimeController.cpp
+    ${CMAKE_SOURCE_DIR}/src/engine/runtime/EditorViewportSceneController.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/commands/ScriptCommandSystem.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/history/EditorHistoryController.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/settings/EditorPreferences.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/Bounds3D.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/SceneObject.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/Scene.cpp
@@ -41,8 +53,21 @@ add_executable(phoenix_editor
     ${CMAKE_SOURCE_DIR}/src/io/FbxImporter.cpp
     ${CMAKE_SOURCE_DIR}/src/io/FbxImportValidation.cpp
     ${CMAKE_SOURCE_DIR}/src/io/FbxSceneBuilder.cpp
-    ${CMAKE_SOURCE_DIR}/src/logging/LogCategories.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/logging/LogCategories.cpp
     ${CMAKE_SOURCE_DIR}/src/viewport/EditorCamera.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/interaction/ViewportInteractionMath.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/interaction/gizmo/TranslateGizmoInteraction.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/interaction/gizmo/RotateGizmoInteraction.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/interaction/gizmo/ScaleGizmoInteraction.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/gizmo/drag/TranslateGizmoDrag.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/gizmo/drag/RotateGizmoDrag.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/gizmo/drag/ScaleGizmoDrag.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/runtime/ViewportRenderSync.cpp
+    ${CMAKE_SOURCE_DIR}/src/rendering/geometry/ViewportOverlayGeometryBuilder.cpp
+    ${CMAKE_SOURCE_DIR}/src/rendering/geometry/gizmo/TranslateGizmoGeometry.cpp
+    ${CMAKE_SOURCE_DIR}/src/rendering/geometry/gizmo/RotateGizmoGeometry.cpp
+    ${CMAKE_SOURCE_DIR}/src/rendering/geometry/gizmo/ScaleGizmoGeometry.cpp
+    ${CMAKE_SOURCE_DIR}/src/rendering/scene/ViewportRenderSceneAdapter.cpp
     ${CMAKE_SOURCE_DIR}/src/rendering/ShaderUtils.cpp
     ${CMAKE_SOURCE_DIR}/src/rendering/ViewportRenderer.cpp
 )

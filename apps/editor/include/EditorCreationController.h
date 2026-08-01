@@ -6,7 +6,7 @@
 #include <QString>
 #include <QVector>
 
-#include "ScriptCommandSystem.h"
+#include "core/commands/ScriptCommandSystem.h"
 #include "scene/PrimitiveMeshFactory.h"
 
 namespace EditorCreationController

@@ -75,6 +75,7 @@ public:
     void toggleQuadView();
     CameraViewPreset activeCameraViewPreset() const;
     bool isCameraViewVisible(CameraViewPreset preset) const;
+    void setWorkspaceActive(bool active);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -120,6 +121,7 @@ private:
     TransformMode transformMode_ = TransformMode::Translate;
     AxisOrientation axisOrientation_ = AxisOrientation::World;
     bool autoKeyEnabled_ = false;
+    bool workspaceActive_ = true;
     QString lastImportMessage_;
     bool lastImportSucceeded_ = false;
     QList<QAction*> wireframeActions_;

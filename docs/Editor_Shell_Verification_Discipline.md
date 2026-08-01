@@ -6,10 +6,10 @@ Last updated: July 24, 2026
 
 Khoa verify discipline cho ticket co touch `EditorShell` implementation:
 
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h>)
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
-* [apps/editor/include/MainWindowContexts.h](</E:/Animation Software/apps/editor/include/MainWindowContexts.h>)
-* [apps/editor/src/MainWindowContexts.cpp](</E:/Animation Software/apps/editor/src/MainWindowContexts.cpp>)
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
+* [src/core/app/EditorShellContexts.h](</E:/Animation Software/src/core/app/EditorShellContexts.h>)
+* [src/core/app/EditorShellContexts.cpp](</E:/Animation Software/src/core/app/EditorShellContexts.cpp>)
 * editor controller / script binding seam lien quan
 
 ## Required Automated Verification
@@ -64,16 +64,16 @@ Neu ticket doi `QObject::connect`, viewport callback, action wiring, dock wiring
 
 Hot spots can review:
 
-* `MainWindow::MainWindow()`
+* `EditorShell::EditorShell()`
 * `create*Menu()`
 * `add*ToolbarSection()`
 * `create*Dock()`
 * `create*Panel()`
-* `MainWindowContexts` lambdas
+* `EditorShellContexts` lambdas
 
 ## Ticket Log Rule
 
-Moi ticket trong [MainWindow_Core_Extraction_Checklist.md](</E:/Animation Software/docs/MainWindow_Core_Extraction_Checklist.md>) nen ghi:
+Moi ticket trong [EditorShell_Core_Extraction_Checklist.md](</E:/Animation Software/docs/EditorShell_Core_Extraction_Checklist.md>) nen ghi:
 
 * ticket id
 * note ngan ve seam da doi

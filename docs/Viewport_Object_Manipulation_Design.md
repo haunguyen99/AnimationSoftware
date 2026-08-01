@@ -80,7 +80,7 @@ In scope:
 ## UML
 
 ```text
-MainWindow
+EditorShell
   |- ViewportWidget
   |- Outliner
   |- Inspector
@@ -101,7 +101,7 @@ Quan he:
 
 ```text
 Viewport click -> PickingAdapter -> SelectionState
-SelectionState -> MainWindow / Outliner / Inspector / ViewportWidget
+SelectionState -> EditorShell / Outliner / Inspector / ViewportWidget
 Viewport drag gizmo -> GizmoController -> SceneObject.localTransform
 Scene change -> ViewportRenderer + Inspector refresh
 ```
@@ -157,7 +157,7 @@ Pattern chinh:
 
 Rule:
 
-* `MainWindow` khong tu tinh picking math
+* `EditorShell` khong tu tinh picking math
 * `ViewportRenderer` khong tu thay doi scene data
 * `GizmoController` khong giu source of truth selection
 * transform update phai di qua scene object seam ro rang
@@ -166,7 +166,7 @@ Rule:
 
 ## Module Boundaries
 
-`MainWindow`
+`EditorShell`
 
 * so huu selection sync giua panels
 * so huu current transform mode UI
@@ -302,4 +302,4 @@ Neu update transform khong co seam ro, code se roi vao `ViewportWidget`.
 
 3. Mode dau tien nen chi lam `Translate` truoc de giam risk, hay buoc dau da phai co du ca `Translate / Rotate / Scale`?
 
-4. Selection source of truth nen dat o `MainWindow`, hay nen tao module rieng `SelectionState`?
+4. Selection source of truth nen dat o `EditorShell`, hay nen tao module rieng `SelectionState`?

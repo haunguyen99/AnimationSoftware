@@ -81,15 +81,15 @@ Phu thuoc truc tiep vao:
 
 Vi sao:
 
-* `MainWindow` dang wire menu, toolbar, docks, playback, script, timeline, viewport
+* `EditorShell` dang wire menu, toolbar, docks, playback, script, timeline, viewport
 * `ScriptCommandSystem` route command vao cac thao tac scene/animation/rigging
 
 Code neo:
 
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h>)
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
-* [apps/editor/include/ScriptCommandSystem.h](</E:/Animation Software/apps/editor/include/ScriptCommandSystem.h>)
-* [apps/editor/src/ScriptCommandSystem.cpp](</E:/Animation Software/apps/editor/src/ScriptCommandSystem.cpp>)
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
+* [src/core/commands/ScriptCommandSystem.h](</E:/Animation Software/src/core/commands/ScriptCommandSystem.h>)
+* [src/core/commands/ScriptCommandSystem.cpp](</E:/Animation Software/src/core/commands/ScriptCommandSystem.cpp>)
 
 ### 2. Engine
 
@@ -106,7 +106,7 @@ Vi sao:
 
 Code neo:
 
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
 * [apps/editor/src/ViewportWidget.cpp](</E:/Animation Software/apps/editor/src/ViewportWidget.cpp>)
 * [src/scene/Scene.cpp](</E:/Animation Software/src/scene/Scene.cpp>)
 
@@ -118,7 +118,8 @@ Phu thuoc truc tiep vao:
 
 Vi sao:
 
-* `Scene` dang la source of truth cho object, hierarchy, transform, bounds, visibility, va mot phan state phuc vu animation/rigging
+* `Scene` dang la source of truth cho object, hierarchy, transform, bounds, visibility
+* `Scene` van giu bridge API cho `Animation` va `Rigging`, nhung state va implementation ownership da duoc tach ra
 
 Code neo:
 
@@ -133,12 +134,14 @@ Phu thuoc truc tiep vao:
 
 Vi sao:
 
-* keyframe track hien dang thuoc `SceneObject`
-* current frame va key ops dang evaluate tren scene objects
+* keyframe facade van di qua `SceneObject` va `Scene`
+* nhung state va evaluation da song trong `ObjectAnimationState` va `SceneAnimationState`
 
 Code neo:
 
-* [src/scene/AnimationData.h](</E:/Animation Software/src/scene/AnimationData.h>)
+* [src/animation/data/TransformKeyframeTrack.h](</E:/Animation Software/src/animation/data/TransformKeyframeTrack.h>)
+* [src/animation/data/ObjectAnimationState.h](</E:/Animation Software/src/animation/data/ObjectAnimationState.h>)
+* [src/animation/scene/SceneAnimationState.h](</E:/Animation Software/src/animation/scene/SceneAnimationState.h>)
 * [src/scene/SceneObject.h](</E:/Animation Software/src/scene/SceneObject.h>)
 * [src/scene/Scene.h](</E:/Animation Software/src/scene/Scene.h>)
 
@@ -151,11 +154,13 @@ Phu thuoc truc tiep vao:
 
 Vi sao:
 
-* `Joint`, `Skeleton Hierarchy`, `Joint Orientation`, `Bind Pose`, skin bind state dang song tren `SceneObject`
-* rig playback phai ton tai cung `Animated Rotation`, khong tach khoi scene/animation state
+* facade `Joint`, `Skeleton Hierarchy`, `Joint Orientation`, `Bind Pose`, skin bind state van di qua `SceneObject` va `Scene`
+* nhung state/implementation da song trong `ObjectRigState` va `SceneRiggingController`
 
 Code neo:
 
+* [src/rigging/data/ObjectRigState.h](</E:/Animation Software/src/rigging/data/ObjectRigState.h>)
+* [src/rigging/scene/SceneRiggingController.h](</E:/Animation Software/src/rigging/scene/SceneRiggingController.h>)
 * [src/scene/SceneObject.h](</E:/Animation Software/src/scene/SceneObject.h>)
 * [src/scene/Scene.h](</E:/Animation Software/src/scene/Scene.h>)
 
@@ -187,11 +192,11 @@ Phan nay map tung canh dependency sang `#include`, field/member type, hoac call 
 
 Bang chung chinh:
 
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h:142>) khai bao `advancePlayback()`
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h:185>) giu `QTimer* playbackTimer_`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:179>) tao `QTimer`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:181>) connect timer vao `MainWindow::advancePlayback`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:3065>) implement `advancePlayback()`
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h:142>) khai bao `advancePlayback()`
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h:185>) giu `QTimer* playbackTimer_`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:179>) tao `QTimer`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:181>) connect timer vao `EditorShell::advancePlayback`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:3065>) implement `advancePlayback()`
 
 Y nghia:
 
@@ -202,11 +207,11 @@ Y nghia:
 
 Bang chung chinh:
 
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h:10>) include `scene/Scene.h`
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h:63>) `EditorHistoryState` giu mot `Scene scene`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:1152>) save qua `PhoenixSceneDocument::saveToFile(viewport_->scene(), ...)`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:2293>) copy `viewport_->scene()` vao history state
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:3074>) export bang cach copy subtree tu `viewport_->scene()`
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h:10>) include `scene/Scene.h`
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h:63>) `EditorHistoryState` giu mot `Scene scene`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:1152>) save qua `PhoenixSceneDocument::saveToFile(viewport_->scene(), ...)`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:2293>) copy `viewport_->scene()` vao history state
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:3074>) export bang cach copy subtree tu `viewport_->scene()`
 
 Y nghia:
 
@@ -217,15 +222,15 @@ Y nghia:
 
 Bang chung chinh:
 
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h:132>) khai bao `setCurrentFrame(...)`
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h:133>) khai bao `setKeyForSelection(...)`
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h:135>) khai bao `duplicateCurrentKeyForSelection(...)`
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h:136>) khai bao `shiftSelectedObjectKeyframes(...)`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:2744>) implement `setCurrentFrame(...)`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:2777>) implement `setKeyForSelection(...)`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:2853>) implement `duplicateCurrentKeyForSelection(...)`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:2905>) implement `shiftSelectedObjectKeyframes(...)`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:3003>) implement `jumpToSelectedObjectKeyframe(...)`
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h:132>) khai bao `setCurrentFrame(...)`
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h:133>) khai bao `setKeyForSelection(...)`
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h:135>) khai bao `duplicateCurrentKeyForSelection(...)`
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h:136>) khai bao `shiftSelectedObjectKeyframes(...)`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:2744>) implement `setCurrentFrame(...)`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:2777>) implement `setKeyForSelection(...)`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:2853>) implement `duplicateCurrentKeyForSelection(...)`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:2905>) implement `shiftSelectedObjectKeyframes(...)`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:3003>) implement `jumpToSelectedObjectKeyframe(...)`
 
 Y nghia:
 
@@ -236,10 +241,10 @@ Y nghia:
 
 Bang chung chinh:
 
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:1423>) doc `meshObject` va `jointObject` tu scene de bind
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:1440>) tao `Scene updatedScene = viewport_->scene()`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:1895>) goi `viewport_->setJointOrientation(...)`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:3354>) apply `Joint Orientation` tu Channel Box
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:1423>) doc `meshObject` va `jointObject` tu scene de bind
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:1440>) tao `Scene updatedScene = viewport_->scene()`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:1895>) goi `viewport_->setJointOrientation(...)`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:3354>) apply `Joint Orientation` tu Channel Box
 
 Y nghia:
 
@@ -250,11 +255,11 @@ Y nghia:
 
 Bang chung chinh:
 
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:182>) dang ky callback tu viewport selection
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:466>) goi `viewport_->setWireframeEnabled(...)`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:475>) goi `viewport_->setAxisVisible(...)`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:483>) goi `viewport_->setBackfaceCullingEnabled(...)`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:2681>) goi `viewport_->setCameraViewPreset(...)`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:182>) dang ky callback tu viewport selection
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:466>) goi `viewport_->setWireframeEnabled(...)`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:475>) goi `viewport_->setAxisVisible(...)`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:483>) goi `viewport_->setBackfaceCullingEnabled(...)`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:2681>) goi `viewport_->setCameraViewPreset(...)`
 
 Y nghia:
 
@@ -280,7 +285,7 @@ Y nghia:
 
 Bang chung chinh:
 
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:3068>) playback tang frame qua `setCurrentFrame(nextFrame, false)`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:3068>) playback tang frame qua `setCurrentFrame(nextFrame, false)`
 * [apps/editor/src/ViewportWidget.cpp](</E:/Animation Software/apps/editor/src/ViewportWidget.cpp:381>) `ViewportWidget::setObjectKeyframe(...)`
 * [apps/editor/src/ViewportWidget.cpp](</E:/Animation Software/apps/editor/src/ViewportWidget.cpp:384>) goi `scene_.setObjectKeyframe(...)`
 * [apps/editor/src/ViewportWidget.cpp](</E:/Animation Software/apps/editor/src/ViewportWidget.cpp:393>) `ViewportWidget::removeObjectKeyframe(...)`
@@ -325,27 +330,26 @@ Y nghia:
 
 Bang chung chinh:
 
-* [src/scene/AnimationData.h](</E:/Animation Software/src/scene/AnimationData.h:12>) dinh nghia `TransformKeyframeTrack`
-* [src/scene/SceneObject.h](</E:/Animation Software/src/scene/SceneObject.h:58>) expose `transformKeyframes()`
-* [src/scene/Scene.h](</E:/Animation Software/src/scene/Scene.h:37>) expose `setObjectKeyframe(...)`
-* [src/scene/Scene.cpp](</E:/Animation Software/src/scene/Scene.cpp:244>) implement `setObjectKeyframe(...)`
-* [src/scene/Scene.cpp](</E:/Animation Software/src/scene/Scene.cpp:284>) implement `offsetObjectKeyframes(...)`
+* [src/animation/data/TransformKeyframeTrack.h](</E:/Animation Software/src/animation/data/TransformKeyframeTrack.h:12>) dinh nghia `TransformKeyframeTrack`
+* [src/animation/data/ObjectAnimationState.h](</E:/Animation Software/src/animation/data/ObjectAnimationState.h:6>) giu object-level animation state
+* [src/animation/scene/SceneAnimationState.h](</E:/Animation Software/src/animation/scene/SceneAnimationState.h:6>) giu scene-level frame/evaluation state
+* [src/scene/SceneObject.h](</E:/Animation Software/src/scene/SceneObject.h:49>) van expose bridge `transformKeyframes()`
+* [src/scene/Scene.h](</E:/Animation Software/src/scene/Scene.h:31>) van expose bridge `setObjectKeyframe(...)`
 
 Y nghia:
 
-* `Animation` hien dang song ben trong `Scene` thay vi dung sau mot seam package rieng
-* day la dependency cot loi, du package placement hien tai con chua dep
+* `Animation` van phu thuoc vao canonical `Scene`
+* nhung package seam da ro hon, va dependency nay gio di qua bridge/facade thay vi implementation chen trong `Scene.cpp`
 
 ### `Rigging -> Scene` : `hard dependency`
 
 Bang chung chinh:
 
-* [src/scene/SceneObject.h](</E:/Animation Software/src/scene/SceneObject.h:17>) `SkinWeight` dung `jointId`
-* [src/scene/SceneObject.h](</E:/Animation Software/src/scene/SceneObject.h:29>) `SceneObject::Kind` co `Joint`
-* [src/scene/Scene.h](</E:/Animation Software/src/scene/Scene.h:23>) expose `createJoint(...)`
-* [src/scene/Scene.h](</E:/Animation Software/src/scene/Scene.h:44>) expose `setJointOrientation(...)`
-* [src/scene/Scene.h](</E:/Animation Software/src/scene/Scene.h:47>) expose `captureBindPose(...)`
-* [src/scene/Scene.cpp](</E:/Animation Software/src/scene/Scene.cpp:359>) implement `captureBindPose(...)`
+* [src/rigging/data/ObjectRigState.h](</E:/Animation Software/src/rigging/data/ObjectRigState.h:8>) giu `SkinWeight` va rig object state
+* [src/scene/SceneObject.h](</E:/Animation Software/src/scene/SceneObject.h:14>) `SceneObject::Kind` van co `Joint`
+* [src/rigging/scene/SceneRiggingController.h](</E:/Animation Software/src/rigging/scene/SceneRiggingController.h:13>) giu rigging scene API ownership
+* [src/scene/Scene.h](</E:/Animation Software/src/scene/Scene.h:40>) van expose bridge `setJointOrientation(...)`
+* [src/scene/Scene.h](</E:/Animation Software/src/scene/Scene.h:43>) van expose bridge `captureBindPose(...)`
 
 Y nghia:
 
@@ -436,7 +440,7 @@ Neu doc theo muc do on dinh cua seam:
 * `Rendering` kha ro seam
 * `Animation` va `Rigging` ro ve hanh vi nhung chua ro ve package
 * `Engine` la `module` mo nhat
-* `Core` dang giam qua nhieu orchestration vao `MainWindow`
+* `Core` dang giam qua nhieu orchestration vao `EditorShell`
 
 ---
 
@@ -469,15 +473,15 @@ Khac biet chinh so voi hien tai:
 
 * `Core` nen giam dependency truc tiep vao domain details
 * `Engine` nen tro thanh noi dieu phoi chinh
-* `Animation` va `Rigging` nen co seam ro hon khoi `src/scene`
+* `Animation` va `Rigging` da co seam ro hon khoi `src/scene`
 
 ---
 
 ## Recommended Next Refactor Order
 
-1. tach ro seam `Animation` khoi `Scene`
-2. tach ro seam `Rigging` khoi `Scene`
-3. rut playback/update orchestration khoi `MainWindow` thanh `Engine`
+1. quyet dinh co cat tiep bridge API `Animation` khoi `Scene`/`SceneObject` hay giu de on dinh
+2. quyet dinh co cat tiep bridge API `Rigging` khoi `Scene`/`SceneObject` hay giu de on dinh
+3. rut playback/update orchestration khoi `EditorShell` thanh `Engine`
 4. sau do moi giam tiep dependency truc tiep cua `Core`
 
 ---
@@ -487,25 +491,25 @@ Khac biet chinh so voi hien tai:
 Muc tieu cua section nay:
 
 * khong co gang cat nhung `hard dependency`
-* uu tien cat nhung canh lam `MainWindow` giu qua nhieu orchestration
+* uu tien cat nhung canh lam `EditorShell` giu qua nhieu orchestration
 * tao duong de dua playback, frame coordination, va authoring runtime vao `Engine`
 
 ### 1. Cat `Core -> Scene` truoc
 
 Files:
 
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h>)
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
 
 Problem:
 
-* `MainWindow` dang doc/ghi `Scene` truc tiep qua history, save/export helpers, va scene copying
-* day la `module` quan sat thay ro nhat theo `deletion test`: xoa khoi `MainWindow` thi complexity khong mat, no chi chuyen ve mot noi dieu phoi dung hon
+* `EditorShell` dang doc/ghi `Scene` truc tiep qua history, save/export helpers, va scene copying
+* day la `module` quan sat thay ro nhat theo `deletion test`: xoa khoi `EditorShell` thi complexity khong mat, no chi chuyen ve mot noi dieu phoi dung hon
 
 Solution:
 
 * dua scene snapshot va scene mutation orchestration vao `Engine`
-* de `MainWindow` chi gui intent nhu `save current document`, `capture undo state`, `export selection`
+* de `EditorShell` chi gui intent nhu `save current document`, `capture undo state`, `export selection`
 
 Benefits:
 
@@ -516,30 +520,30 @@ Benefits:
 Vi sao uu tien so 1:
 
 * day la canh `incidental dependency`
-* cat no som nhat se lam `MainWindow` nhe hon ma it dung vao domain model cot loi
+* cat no som nhat se lam `EditorShell` nhe hon ma it dung vao domain model cot loi
 
 ### 2. Cat phan playback/time cua `Core -> Animation`
 
 Files:
 
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h>)
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
 
 Problem:
 
-* `MainWindow` dang giu `playbackTimer_`, `advancePlayback()`, `setCurrentFrame()`, playback range, va jump logic
+* `EditorShell` dang giu `playbackTimer_`, `advancePlayback()`, `setCurrentFrame()`, playback range, va jump logic
 * day la hanh vi `Engine` ro rang nhat nhung dang nam trong `Core`
 
 Solution:
 
 * dua playback clock, frame stepping, playback range clamp, va current-frame orchestration vao `Engine`
-* `MainWindow` chi con bind button/slider vao `Engine` interface
+* `EditorShell` chi con bind button/slider vao `Engine` interface
 
 Benefits:
 
 * tang `leverage` vi moi playback rule chi nam o mot noi
 * tang `locality` cho bug lien quan frame update
-* test playback khong can dung full `MainWindow`
+* test playback khong can dung full `EditorShell`
 
 Vi sao uu tien so 2:
 
@@ -550,13 +554,13 @@ Vi sao uu tien so 2:
 
 Files:
 
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
-* [apps/editor/include/ScriptCommandSystem.h](</E:/Animation Software/apps/editor/include/ScriptCommandSystem.h>)
-* [apps/editor/src/ScriptCommandSystem.cpp](</E:/Animation Software/apps/editor/src/ScriptCommandSystem.cpp>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
+* [src/core/commands/ScriptCommandSystem.h](</E:/Animation Software/src/core/commands/ScriptCommandSystem.h>)
+* [src/core/commands/ScriptCommandSystem.cpp](</E:/Animation Software/src/core/commands/ScriptCommandSystem.cpp>)
 
 Problem:
 
-* `MainWindow` dang giu workflow policy cho:
+* `EditorShell` dang giu workflow policy cho:
   * `set key`
   * `delete key`
   * `duplicate key`
@@ -578,18 +582,18 @@ Benefits:
 Vi sao uu tien so 3:
 
 * no xay tren step playback/time
-* sau khi frame coordination ra khoi `MainWindow`, nhom key ops se de gom hon
+* sau khi frame coordination ra khoi `EditorShell`, nhom key ops se de gom hon
 
 ### 4. Cat nhom editor workflow cua `Core -> Rigging`
 
 Files:
 
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
 * [apps/editor/src/ViewportWidget.cpp](</E:/Animation Software/apps/editor/src/ViewportWidget.cpp>)
 
 Problem:
 
-* `MainWindow` dang giu policy cho:
+* `EditorShell` dang giu policy cho:
   * `create joint`
   * `parent/unparent`
   * `bind skin`
@@ -600,7 +604,7 @@ Problem:
 Solution:
 
 * dua nhom rig authoring actions vao `Engine` orchestration hoac mot `Rigging` seam ro hon
-* de `MainWindow` chi con la adapter cho menu, toolbar, inspector, va channel box
+* de `EditorShell` chi con la adapter cho menu, toolbar, inspector, va channel box
 
 Benefits:
 
@@ -617,19 +621,19 @@ Vi sao uu tien so 4:
 
 Files:
 
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
 * [apps/editor/include/ViewportWidget.h](</E:/Animation Software/apps/editor/include/ViewportWidget.h>)
 * [apps/editor/src/ViewportWidget.cpp](</E:/Animation Software/apps/editor/src/ViewportWidget.cpp>)
 
 Problem:
 
-* `MainWindow` dang biet kha nhieu ve viewport options va camera actions
+* `EditorShell` dang biet kha nhieu ve viewport options va camera actions
 * nhung day la workflow UI tu nhien hon so voi scene/animation/rigging mutation
 
 Solution:
 
 * khong uu tien cat bo hoan toan
-* chi lam mong `interface` viewport de `MainWindow` goi it chi tiet hon
+* chi lam mong `interface` viewport de `EditorShell` goi it chi tiet hon
 
 Benefits:
 

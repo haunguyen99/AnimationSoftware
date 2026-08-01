@@ -167,7 +167,7 @@ Chi can them helper ops:
 
 Khuyen nghi tiep tuc dung:
 
-* `MainWindow`
+* `EditorShell`
 * `KeyframeTimelineWidget`
 * `ScriptCommandSystem`
 
@@ -267,6 +267,10 @@ Control:
 
 * co selected frame/range state toi thieu
 * tiep suc cho range-based key ops
+
+Status:
+
+* foundation da vao code
 
 ### Task 5 - Playback Navigation By Keys
 

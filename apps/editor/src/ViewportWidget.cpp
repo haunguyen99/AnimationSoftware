@@ -10,53 +10,19 @@
 
 #include <limits>
 
-#include "logging/LogCategories.h"
+#include "core/logging/LogCategories.h"
+#include "rendering/scene/ViewportRenderSceneAdapter.h"
+#include "viewport/interaction/ViewportInteractionMath.h"
+#include "viewport/interaction/gizmo/RotateGizmoInteraction.h"
+#include "viewport/interaction/gizmo/ScaleGizmoInteraction.h"
+#include "viewport/interaction/gizmo/TranslateGizmoInteraction.h"
+#include "viewport/gizmo/drag/RotateGizmoDrag.h"
+#include "viewport/gizmo/drag/ScaleGizmoDrag.h"
+#include "viewport/gizmo/drag/TranslateGizmoDrag.h"
+#include "viewport/runtime/ViewportRenderSync.h"
 
 namespace
 {
-constexpr int kRotatePickSegments = 48;
-
-float rayBoundsDistance(const QVector3D& rayOrigin, const QVector3D& rayDirection, const Bounds3D& bounds)
-{
-    if (!bounds.isValid()) {
-        return -1.0f;
-    }
-
-    float tMin = 0.0f;
-    float tMax = std::numeric_limits<float>::max();
-    const QVector3D minPoint = bounds.min();
-    const QVector3D maxPoint = bounds.max();
-
-    for (int axis = 0; axis < 3; ++axis) {
-        const float origin = axis == 0 ? rayOrigin.x() : (axis == 1 ? rayOrigin.y() : rayOrigin.z());
-        const float direction = axis == 0 ? rayDirection.x() : (axis == 1 ? rayDirection.y() : rayDirection.z());
-        const float minValue = axis == 0 ? minPoint.x() : (axis == 1 ? minPoint.y() : minPoint.z());
-        const float maxValue = axis == 0 ? maxPoint.x() : (axis == 1 ? maxPoint.y() : maxPoint.z());
-
-        if (qFuzzyIsNull(direction)) {
-            if (origin < minValue || origin > maxValue) {
-                return -1.0f;
-            }
-            continue;
-        }
-
-        const float inverse = 1.0f / direction;
-        float t1 = (minValue - origin) * inverse;
-        float t2 = (maxValue - origin) * inverse;
-        if (t1 > t2) {
-            std::swap(t1, t2);
-        }
-
-        tMin = qMax(tMin, t1);
-        tMax = qMin(tMax, t2);
-        if (tMin > tMax) {
-            return -1.0f;
-        }
-    }
-
-    return tMin;
-}
-
 QVector3D axisVector(int axis)
 {
     switch (axis) {
@@ -69,19 +35,6 @@ QVector3D axisVector(int axis)
     default:
         return QVector3D();
     }
-}
-
-qreal distancePointToSegment(const QPointF& point, const QPointF& a, const QPointF& b)
-{
-    const QVector2D line(b - a);
-    if (qFuzzyIsNull(line.lengthSquared())) {
-        return QLineF(point, a).length();
-    }
-
-    const QVector2D offset(point - a);
-    const float t = qBound(0.0f, QVector2D::dotProduct(offset, line) / line.lengthSquared(), 1.0f);
-    const QPointF closest = a + (b - a) * t;
-    return QLineF(point, closest).length();
 }
 }
 
@@ -109,6 +62,7 @@ void ViewportWidget::requestRender()
 void ViewportWidget::resetCamera()
 {
     camera_.reset();
+    syncRendererSelection();
     requestRender();
 }
 
@@ -139,6 +93,7 @@ void ViewportWidget::setCameraViewPreset(CameraViewPreset preset)
     }
 
     camera_.setViewPreset(cameraPreset);
+    syncRendererSelection();
     requestRender();
 }
 
@@ -176,6 +131,7 @@ void ViewportWidget::frameScene()
     } else {
         camera_.frameScene();
     }
+    syncRendererSelection();
     requestRender();
 }
 
@@ -189,6 +145,7 @@ void ViewportWidget::frameObject(SceneObject::Id objectId)
         return;
     }
 
+    syncRendererSelection();
     requestRender();
 }
 
@@ -412,7 +369,7 @@ void ViewportWidget::initializeGL()
     }
 
     viewportInitFailureReason_.clear();
-    renderer_.syncScene(scene_);
+    ViewportRenderSync::syncScene(renderer_, scene_);
     syncRendererSelection();
     qCInfo(logViewport) << "init ok";
     requestRender();
@@ -426,6 +383,7 @@ void ViewportWidget::resizeGL(int width, int height)
     glViewport(0, 0, width, height);
     camera_.setViewportSize(width, height);
     renderer_.resize(width, height);
+    syncRendererSelection();
     requestRender();
 }
 
@@ -459,18 +417,85 @@ void ViewportWidget::mousePressEvent(QMouseEvent* event)
     activeButtons_ = event->buttons();
 
     if (!(event->modifiers() & Qt::AltModifier) && event->button() == Qt::LeftButton && selectedObjectId_ != 0) {
-        const GizmoAxis axis = pickGizmoAxisAtScreenPos(event->pos());
-        if (axis != GizmoAxis::None) {
+        const GizmoHandle handle = pickGizmoHandleAtScreenPos(event->pos());
+        if (handle != GizmoHandle::None) {
             dragState_.active = true;
             dragState_.startMousePosition = event->pos();
-            dragState_.axis = axis;
+            dragState_.startScreenVector = QPointF();
+            dragState_.handle = handle;
             dragState_.gizmoOrigin = gizmoOrigin();
             dragState_.gizmoSize = gizmoSize();
 
             if (const SceneObject* object = scene_.findObject(selectedObjectId_)) {
                 dragState_.startTransform = object->localTransform();
             }
+            dragState_.previewStartWorldMatrix = scene_.worldTransform(selectedObjectId_);
 
+            if (transformMode_ == TransformMode::Translate && gizmoHandleUsesPlaneDrag(handle)) {
+                dragState_.dragPlaneOrigin = dragState_.gizmoOrigin;
+                dragState_.dragPlaneNormal = gizmoPlaneNormalWorld(handle);
+
+                QVector3D rayOrigin;
+                QVector3D rayDirection;
+                ViewportInteractionMath::screenPosToWorldRay(
+                    camera_.projectionMatrix(),
+                    camera_.viewMatrix(),
+                    viewportWidth_,
+                    viewportHeight_,
+                    event->pos(),
+                    rayOrigin,
+                    rayDirection);
+
+                QVector3D hitPoint;
+                if (ViewportInteractionMath::intersectRayPlane(
+                        rayOrigin,
+                        rayDirection,
+                        dragState_.dragPlaneOrigin,
+                        dragState_.dragPlaneNormal,
+                        &hitPoint)) {
+                    dragState_.dragStartWorldPoint = hitPoint;
+                } else {
+                    dragState_.dragStartWorldPoint = dragState_.gizmoOrigin;
+                }
+            } else if (transformMode_ == TransformMode::Rotate) {
+                dragState_.dragPlaneOrigin = dragState_.gizmoOrigin;
+                dragState_.dragPlaneNormal = handle == GizmoHandle::ViewPlane
+                    ? -camera_.forwardDirection().normalized()
+                    : gizmoAxisDirectionWorld(handle);
+
+                QVector3D rayOrigin;
+                QVector3D rayDirection;
+                ViewportInteractionMath::screenPosToWorldRay(
+                    camera_.projectionMatrix(),
+                    camera_.viewMatrix(),
+                    viewportWidth_,
+                    viewportHeight_,
+                    event->pos(),
+                    rayOrigin,
+                    rayDirection);
+
+                QVector3D hitPoint;
+                if (ViewportInteractionMath::intersectRayPlane(
+                        rayOrigin,
+                        rayDirection,
+                        dragState_.dragPlaneOrigin,
+                        dragState_.dragPlaneNormal,
+                        &hitPoint)) {
+                    dragState_.dragStartWorldPoint = hitPoint;
+                } else {
+                    dragState_.dragStartWorldPoint = dragState_.gizmoOrigin;
+                }
+
+                const QPointF originScreen = ViewportInteractionMath::projectWorldToScreen(
+                    camera_.projectionMatrix(),
+                    camera_.viewMatrix(),
+                    dragState_.gizmoOrigin,
+                    viewportWidth_,
+                    viewportHeight_);
+                dragState_.startScreenVector = QPointF(event->pos()) - originScreen;
+            }
+
+            beginInteractivePreview();
             syncRendererSelection();
             requestRender();
             event->accept();
@@ -498,12 +523,15 @@ void ViewportWidget::mouseMoveEvent(QMouseEvent* event)
 
     if ((event->modifiers() & Qt::AltModifier) && (event->buttons() & Qt::LeftButton)) {
         camera_.orbit(delta.x() * -0.35f, delta.y() * -0.35f);
+        syncRendererSelection();
         requestRender();
     } else if ((event->modifiers() & Qt::AltModifier) && (event->buttons() & Qt::MiddleButton)) {
         camera_.pan(static_cast<float>(delta.x()), static_cast<float>(delta.y()));
+        syncRendererSelection();
         requestRender();
     } else if ((event->modifiers() & Qt::AltModifier) && (event->buttons() & Qt::RightButton)) {
         camera_.zoom(static_cast<float>(-delta.y()) * 0.05f);
+        syncRendererSelection();
         requestRender();
     }
 
@@ -514,6 +542,12 @@ void ViewportWidget::mouseReleaseEvent(QMouseEvent* event)
 {
     activeButtons_ = event->buttons();
     if (dragState_.active && event->button() == Qt::LeftButton) {
+        endInteractivePreview();
+        syncSceneToRenderer();
+        if (objectTransformChangedCallback_) {
+            objectTransformChangedCallback_(selectedObjectId_);
+        }
+        dragRenderSyncTimer_.invalidate();
         dragState_ = {};
         syncRendererSelection();
         requestRender();
@@ -524,6 +558,7 @@ void ViewportWidget::mouseReleaseEvent(QMouseEvent* event)
 void ViewportWidget::wheelEvent(QWheelEvent* event)
 {
     camera_.zoom(static_cast<float>(event->angleDelta().y()) / 120.0f);
+    syncRendererSelection();
     requestRender();
     event->accept();
 }
@@ -543,6 +578,8 @@ void ViewportWidget::applyRendererSelectionState()
 {
     const SceneObject* object = scene_.findObject(selectedObjectId_);
     if (object != nullptr) {
+        ViewportRenderSelectionState selectionState;
+        selectionState.hasSelection = true;
         ViewportRenderer::GizmoMode gizmoMode = ViewportRenderer::GizmoMode::Translate;
         if (transformMode_ == TransformMode::Rotate) {
             gizmoMode = ViewportRenderer::GizmoMode::Rotate;
@@ -550,17 +587,16 @@ void ViewportWidget::applyRendererSelectionState()
             gizmoMode = ViewportRenderer::GizmoMode::Scale;
         }
 
-        renderer_.setSelectedBounds(object->worldBounds());
-        renderer_.setGizmo(
-            gizmoOrigin(),
-            gizmoSize(),
-            gizmoMode,
-            gizmoAxesWorld(),
-            camera_.forwardDirection(),
-            dragState_.active ? static_cast<int>(dragState_.axis) : -1);
+        selectionState.selectedBounds = object->worldBounds();
+        selectionState.gizmoOrigin = gizmoOrigin();
+        selectionState.gizmoSize = gizmoSize();
+        selectionState.gizmoMode = gizmoMode;
+        selectionState.gizmoAxes = gizmoAxesWorld();
+        selectionState.cameraForward = camera_.forwardDirection();
+        selectionState.activeAxis = dragState_.active ? static_cast<int>(dragState_.handle) : -1;
+        ViewportRenderSync::applySelectionState(renderer_, selectionState);
     } else {
-        renderer_.setSelectedBounds(Bounds3D());
-        renderer_.clearGizmo();
+        ViewportRenderSync::applySelectionState(renderer_, {});
     }
 }
 
@@ -571,9 +607,65 @@ void ViewportWidget::syncSceneToRenderer()
     }
 
     makeCurrent();
-    renderer_.syncScene(scene_);
+    ViewportRenderSync::syncScene(renderer_, scene_);
     applyRendererSelectionState();
     doneCurrent();
+}
+
+void ViewportWidget::syncSceneToRendererExcludingSelection()
+{
+    if (!viewportInitialized_ || !isValid() || context() == nullptr) {
+        return;
+    }
+
+    makeCurrent();
+    renderer_.syncScene(ViewportRenderSceneAdapter::buildSceneDataExcludingSubtree(scene_, selectedObjectId_));
+    applyRendererSelectionState();
+    doneCurrent();
+}
+
+void ViewportWidget::beginInteractivePreview()
+{
+    if (selectedObjectId_ == 0 || !viewportInitialized_ || !isValid() || context() == nullptr) {
+        return;
+    }
+
+    makeCurrent();
+    renderer_.syncScene(ViewportRenderSceneAdapter::buildSceneDataExcludingSubtree(scene_, selectedObjectId_));
+    renderer_.setPreviewScene(
+        ViewportRenderSceneAdapter::buildSubtreeSceneData(scene_, selectedObjectId_),
+        QMatrix4x4());
+    applyRendererSelectionState();
+    doneCurrent();
+    interactivePreviewActive_ = true;
+}
+
+void ViewportWidget::updateInteractivePreview()
+{
+    if (!interactivePreviewActive_ || selectedObjectId_ == 0 || !viewportInitialized_ || !isValid() || context() == nullptr) {
+        return;
+    }
+
+    const QMatrix4x4 currentWorldMatrix = scene_.worldTransform(selectedObjectId_);
+    const QMatrix4x4 previewDelta = currentWorldMatrix * dragState_.previewStartWorldMatrix.inverted();
+
+    makeCurrent();
+    renderer_.updatePreviewTransform(previewDelta);
+    applyRendererSelectionState();
+    doneCurrent();
+}
+
+void ViewportWidget::endInteractivePreview()
+{
+    if (!interactivePreviewActive_ || !viewportInitialized_ || !isValid() || context() == nullptr) {
+        interactivePreviewActive_ = false;
+        return;
+    }
+
+    makeCurrent();
+    renderer_.clearPreviewScene();
+    doneCurrent();
+    interactivePreviewActive_ = false;
 }
 
 void ViewportWidget::updateSelectedObject(SceneObject::Id objectId)
@@ -586,113 +678,65 @@ void ViewportWidget::updateSelectedObject(SceneObject::Id objectId)
 
 SceneObject::Id ViewportWidget::pickObjectAtScreenPos(const QPoint& position) const
 {
-    const QMatrix4x4 inverseProjectionView = (camera_.projectionMatrix() * camera_.viewMatrix()).inverted();
-    const float x = (2.0f * static_cast<float>(position.x()) / qMax(1, viewportWidth_)) - 1.0f;
-    const float y = 1.0f - (2.0f * static_cast<float>(position.y()) / qMax(1, viewportHeight_));
-    const QVector4D nearPoint = inverseProjectionView * QVector4D(x, y, -1.0f, 1.0f);
-    const QVector4D farPoint = inverseProjectionView * QVector4D(x, y, 1.0f, 1.0f);
-    const QVector3D rayOrigin = nearPoint.toVector3DAffine();
-    const QVector3D rayDirection = (farPoint.toVector3DAffine() - rayOrigin).normalized();
-
-    SceneObject::Id bestId = 0;
-    float bestDistance = std::numeric_limits<float>::max();
-    for (SceneObject::Id objectId : scene_.allObjectIds()) {
-        const SceneObject* object = scene_.findObject(objectId);
-        if (object == nullptr || !object->isVisible() || !object->worldBounds().isValid()) {
-            continue;
-        }
-
-        const float distance = rayBoundsDistance(rayOrigin, rayDirection, object->worldBounds());
-        if (distance >= 0.0f && distance < bestDistance) {
-            bestDistance = distance;
-            bestId = objectId;
-        }
-    }
-
-    return bestId;
+    return ViewportInteractionMath::pickObjectAtScreenPos(
+        scene_,
+        camera_.projectionMatrix(),
+        camera_.viewMatrix(),
+        viewportWidth_,
+        viewportHeight_,
+        position);
 }
 
-ViewportWidget::GizmoAxis ViewportWidget::pickGizmoAxisAtScreenPos(const QPoint& position) const
+ViewportWidget::GizmoHandle ViewportWidget::pickGizmoHandleAtScreenPos(const QPoint& position) const
 {
     if (selectedObjectId_ == 0) {
-        return GizmoAxis::None;
+        return GizmoHandle::None;
     }
 
     const QVector3D origin = gizmoOrigin();
     const float size = gizmoSize();
-    const QPointF mousePoint(position);
     const QVector<QVector3D> worldAxes = gizmoAxesWorld();
+    const QMatrix4x4 projectionMatrix = camera_.projectionMatrix();
+    const QMatrix4x4 viewMatrix = camera_.viewMatrix();
 
     if (transformMode_ == TransformMode::Rotate) {
-        GizmoAxis bestAxis = GizmoAxis::None;
-        qreal bestDistance = 14.0;
-
-        for (GizmoAxis axis : { GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z }) {
-            const QVector3D normalAxis = worldAxes[static_cast<int>(axis)].normalized();
-            QVector3D basisA = QVector3D::crossProduct(normalAxis, QVector3D(0.0f, 1.0f, 0.0f));
-            if (basisA.lengthSquared() < 0.0001f) {
-                basisA = QVector3D::crossProduct(normalAxis, QVector3D(1.0f, 0.0f, 0.0f));
-            }
-            basisA.normalize();
-            const QVector3D basisB = QVector3D::crossProduct(normalAxis, basisA).normalized();
-
-            qreal axisDistance = bestDistance;
-            for (int segment = 0; segment < kRotatePickSegments; ++segment) {
-                const float angleA = (static_cast<float>(segment) / kRotatePickSegments) * 360.0f;
-                const float angleB = (static_cast<float>(segment + 1) / kRotatePickSegments) * 360.0f;
-                const float radiansA = qDegreesToRadians(angleA);
-                const float radiansB = qDegreesToRadians(angleB);
-
-                const QVector3D pointA3D = origin + (basisA * qCos(radiansA) + basisB * qSin(radiansA)) * (size * 0.9f);
-                const QVector3D pointB3D = origin + (basisA * qCos(radiansB) + basisB * qSin(radiansB)) * (size * 0.9f);
-                const QPointF pointA = projectWorldToScreen(pointA3D);
-                const QPointF pointB = projectWorldToScreen(pointB3D);
-
-                axisDistance = qMin(axisDistance, distancePointToSegment(mousePoint, pointA, pointB));
-            }
-
-            if (axisDistance < bestDistance) {
-                bestDistance = axisDistance;
-                bestAxis = axis;
-            }
-        }
-
-        return bestAxis;
+        return static_cast<GizmoHandle>(RotateGizmoInteraction::pickHandle(
+            position,
+            origin,
+            size,
+            worldAxes,
+            camera_.forwardDirection(),
+            projectionMatrix,
+            viewMatrix,
+            viewportWidth_,
+            viewportHeight_));
     }
 
-    GizmoAxis bestAxis = GizmoAxis::None;
-    qreal bestDistance = transformMode_ == TransformMode::Scale ? 12.0 : 8.0;
-
-    for (GizmoAxis axis : { GizmoAxis::X, GizmoAxis::Y, GizmoAxis::Z }) {
-        const QPointF a = projectWorldToScreen(origin);
-        const QPointF b = projectWorldToScreen(origin + worldAxes[static_cast<int>(axis)] * size);
-        qreal distance = distancePointToSegment(mousePoint, a, b);
-
-        if (transformMode_ == TransformMode::Scale) {
-            const QPointF handleCenter = b;
-            distance = qMin(distance, QLineF(mousePoint, handleCenter).length());
-        }
-
-        if (distance < bestDistance) {
-            bestDistance = distance;
-            bestAxis = axis;
-        }
+    if (transformMode_ == TransformMode::Translate) {
+        return static_cast<GizmoHandle>(TranslateGizmoInteraction::pickHandle(
+            position,
+            origin,
+            size,
+            worldAxes,
+            camera_.forwardDirection(),
+            projectionMatrix,
+            viewMatrix,
+            viewportWidth_,
+            viewportHeight_));
+    } else if (transformMode_ == TransformMode::Scale) {
+        return static_cast<GizmoHandle>(ScaleGizmoInteraction::pickHandle(
+            position,
+            origin,
+            size,
+            worldAxes,
+            camera_.forwardDirection(),
+            projectionMatrix,
+            viewMatrix,
+            viewportWidth_,
+            viewportHeight_));
     }
 
-    return bestAxis;
-}
-
-QPointF ViewportWidget::projectWorldToScreen(const QVector3D& worldPosition) const
-{
-    const QVector4D clipPosition = camera_.projectionMatrix() * camera_.viewMatrix() * QVector4D(worldPosition, 1.0f);
-    if (qFuzzyIsNull(clipPosition.w())) {
-        return QPointF();
-    }
-
-    const QVector3D ndc = clipPosition.toVector3DAffine();
-    const qreal screenX = (ndc.x() * 0.5 + 0.5) * viewportWidth_;
-    const qreal screenY = (1.0 - (ndc.y() * 0.5 + 0.5)) * viewportHeight_;
-    return QPointF(screenX, screenY);
+    return GizmoHandle::None;
 }
 
 QVector<QVector3D> ViewportWidget::gizmoAxesWorld() const
@@ -714,14 +758,50 @@ QVector<QVector3D> ViewportWidget::gizmoAxesWorld() const
     return axes;
 }
 
-QVector3D ViewportWidget::gizmoAxisDirectionWorld(GizmoAxis axis) const
+QVector3D ViewportWidget::gizmoAxisDirectionWorld(GizmoHandle handle) const
 {
-    if (axis == GizmoAxis::None) {
+    if (handle == GizmoHandle::None) {
         return QVector3D();
     }
 
     const QVector<QVector3D> axes = gizmoAxesWorld();
-    return axes[static_cast<int>(axis)];
+    const int axisIndex = static_cast<int>(handle);
+    if (axisIndex < 0 || axisIndex > 2) {
+        return QVector3D();
+    }
+
+    return axes[axisIndex];
+}
+
+QVector3D ViewportWidget::gizmoPlaneNormalWorld(GizmoHandle handle) const
+{
+    const QVector<QVector3D> axes = gizmoAxesWorld();
+    if (axes.size() < 3) {
+        return camera_.forwardDirection();
+    }
+
+    switch (handle) {
+    case GizmoHandle::XY:
+        return QVector3D::crossProduct(axes[0], axes[1]).normalized();
+    case GizmoHandle::YZ:
+        return QVector3D::crossProduct(axes[1], axes[2]).normalized();
+    case GizmoHandle::XZ:
+        return QVector3D::crossProduct(axes[0], axes[2]).normalized();
+    case GizmoHandle::ViewPlane:
+        return -camera_.forwardDirection().normalized();
+    case GizmoHandle::None:
+    case GizmoHandle::X:
+    case GizmoHandle::Y:
+    case GizmoHandle::Z:
+        break;
+    }
+
+    return camera_.forwardDirection();
+}
+
+bool ViewportWidget::gizmoHandleUsesPlaneDrag(GizmoHandle handle) const
+{
+    return isPlaneGizmoHandle(handle) || isScreenGizmoHandle(handle);
 }
 
 QVector3D ViewportWidget::selectedObjectWorldOrigin() const
@@ -831,48 +911,110 @@ void ViewportWidget::applyDrag(const QPoint& currentPosition)
     }
 
     Transform transform = dragState_.startTransform;
-    const QVector3D worldAxis = gizmoAxisDirectionWorld(dragState_.axis);
-    const QPointF originScreen = projectWorldToScreen(dragState_.gizmoOrigin);
-    const QPointF axisScreen = projectWorldToScreen(dragState_.gizmoOrigin + worldAxis * dragState_.gizmoSize);
-    QVector2D axisDirection(axisScreen - originScreen);
-    if (qFuzzyIsNull(axisDirection.lengthSquared())) {
-        return;
-    }
+    const QMatrix4x4 projectionMatrix = camera_.projectionMatrix();
+    const QMatrix4x4 viewMatrix = camera_.viewMatrix();
+    const QMatrix4x4 parentTransform = parentWorldTransform();
+    bool updated = false;
 
-    axisDirection.normalize();
-    const QVector2D mouseDelta(currentPosition - dragState_.startMousePosition);
-    const float screenDelta = QVector2D::dotProduct(mouseDelta, axisDirection);
-    const float axisPixelLength = QLineF(originScreen, axisScreen).length();
-    if (qFuzzyIsNull(axisPixelLength)) {
-        return;
-    }
-
-    if (transformMode_ == TransformMode::Translate) {
-        const float worldDelta = screenDelta * (dragState_.gizmoSize / axisPixelLength);
-        const QMatrix4x4 parentInverse = parentWorldTransform().inverted();
-        transform.translation += parentInverse.mapVector(worldAxis * worldDelta);
+    if (transformMode_ == TransformMode::Translate && gizmoHandleUsesPlaneDrag(dragState_.handle)) {
+        updated = TranslateGizmoDrag::applyPlane(
+            transform,
+            dragState_.startTransform,
+            currentPosition,
+            dragState_.dragPlaneOrigin,
+            dragState_.dragPlaneNormal,
+            dragState_.dragStartWorldPoint,
+            projectionMatrix,
+            viewMatrix,
+            viewportWidth_,
+            viewportHeight_,
+            parentTransform);
+    } else if (transformMode_ == TransformMode::Translate) {
+        updated = TranslateGizmoDrag::applyAxis(
+            transform,
+            dragState_.startTransform,
+            currentPosition,
+            dragState_.startMousePosition,
+            dragState_.gizmoOrigin,
+            dragState_.gizmoSize,
+            gizmoAxisDirectionWorld(dragState_.handle),
+            projectionMatrix,
+            viewMatrix,
+            viewportWidth_,
+            viewportHeight_,
+            parentTransform);
+    } else if (transformMode_ == TransformMode::Rotate && dragState_.handle == GizmoHandle::ViewPlane) {
+        updated = RotateGizmoDrag::applyScreen(
+            transform,
+            dragState_.startTransform,
+            currentPosition,
+            dragState_.startScreenVector,
+            dragState_.gizmoOrigin,
+            dragState_.dragPlaneNormal,
+            projectionMatrix,
+            viewMatrix,
+            viewportWidth_,
+            viewportHeight_,
+            parentTransform);
     } else if (transformMode_ == TransformMode::Rotate) {
-        // Rotate drag should follow the perceived mouse direction instead of
-        // feeling mirrored relative to the screen-space gizmo guide.
-        const float angleDegrees = screenDelta * -0.5f;
-        if (axisOrientation_ == AxisOrientation::World) {
-            const QMatrix4x4 parentInverse = parentWorldTransform().inverted();
-            const QVector3D localAxis = parentInverse.mapVector(worldAxis).normalized();
-            transform.rotation = QQuaternion::fromAxisAndAngle(localAxis, angleDegrees) * transform.rotation;
-        } else {
-            transform.rotation = transform.rotation * QQuaternion::fromAxisAndAngle(axisVector(static_cast<int>(dragState_.axis)), angleDegrees);
-        }
+        updated = RotateGizmoDrag::applyAxis(
+            transform,
+            dragState_.startTransform,
+            currentPosition,
+            dragState_.gizmoOrigin,
+            dragState_.dragPlaneOrigin,
+            dragState_.dragPlaneNormal,
+            dragState_.dragStartWorldPoint,
+            projectionMatrix,
+            viewMatrix,
+            viewportWidth_,
+            viewportHeight_,
+            parentTransform,
+            axisOrientation_ == AxisOrientation::World,
+            axisVector(static_cast<int>(dragState_.handle)));
+    } else if (transformMode_ == TransformMode::Scale
+        && (dragState_.handle == GizmoHandle::XY
+            || dragState_.handle == GizmoHandle::YZ
+            || dragState_.handle == GizmoHandle::XZ
+            || dragState_.handle == GizmoHandle::ViewPlane)) {
+        updated = ScaleGizmoDrag::applyMultiAxis(
+            transform,
+            dragState_.startTransform,
+            dragState_.handle,
+            currentPosition,
+            dragState_.startMousePosition);
     } else {
-        const float scaleDelta = screenDelta / axisPixelLength;
-        QVector3D scale = transform.scale;
-        if (dragState_.axis == GizmoAxis::X) {
-            scale.setX(qMax(0.05f, dragState_.startTransform.scale.x() + scaleDelta));
-        } else if (dragState_.axis == GizmoAxis::Y) {
-            scale.setY(qMax(0.05f, dragState_.startTransform.scale.y() + scaleDelta));
-        } else if (dragState_.axis == GizmoAxis::Z) {
-            scale.setZ(qMax(0.05f, dragState_.startTransform.scale.z() + scaleDelta));
+        const QVector3D worldAxis = gizmoAxisDirectionWorld(dragState_.handle);
+        const QPointF originScreen = ViewportInteractionMath::projectWorldToScreen(
+            camera_.projectionMatrix(),
+            camera_.viewMatrix(),
+            dragState_.gizmoOrigin,
+            viewportWidth_,
+            viewportHeight_);
+        const QPointF axisScreen = ViewportInteractionMath::projectWorldToScreen(
+            projectionMatrix,
+            viewMatrix,
+            dragState_.gizmoOrigin + worldAxis * dragState_.gizmoSize,
+            viewportWidth_,
+            viewportHeight_);
+        QVector2D axisDirection(axisScreen - originScreen);
+        if (qFuzzyIsNull(axisDirection.lengthSquared())) {
+            return;
         }
-        transform.scale = scale;
+        axisDirection.normalize();
+        const QVector2D mouseDelta(currentPosition - dragState_.startMousePosition);
+        const float screenDelta = QVector2D::dotProduct(mouseDelta, axisDirection);
+        const float axisPixelLength = QLineF(originScreen, axisScreen).length();
+        updated = ScaleGizmoDrag::applyAxis(
+            transform,
+            dragState_.startTransform,
+            dragState_.handle,
+            screenDelta,
+            axisPixelLength);
+    }
+
+    if (!updated) {
+        return;
     }
 
     if (!dragState_.historyCaptured) {
@@ -881,14 +1023,20 @@ void ViewportWidget::applyDrag(const QPoint& currentPosition)
     }
 
     suppressBeforeSceneMutationCallback_ = true;
-    if (!setObjectLocalTransform(selectedObjectId_, transform)) {
+    if (!scene_.setLocalTransformInteractive(selectedObjectId_, transform, autoKeyEnabled_)) {
         suppressBeforeSceneMutationCallback_ = false;
         return;
     }
     suppressBeforeSceneMutationCallback_ = false;
 
-    if (objectTransformChangedCallback_) {
-        objectTransformChangedCallback_(selectedObjectId_);
+    updateInteractivePreview();
+
+    const bool shouldNotifyUi = !dragRenderSyncTimer_.isValid() || dragRenderSyncTimer_.elapsed() >= 16;
+    if (shouldNotifyUi) {
+        dragRenderSyncTimer_.restart();
+        if (objectTransformChangedCallback_) {
+            objectTransformChangedCallback_(selectedObjectId_);
+        }
     }
 
     requestRender();

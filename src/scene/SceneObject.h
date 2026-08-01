@@ -3,20 +3,10 @@
 #include <QString>
 #include <QVector>
 
-#include <cstdint>
-
-#include "scene/AnimationData.h"
+#include "animation/data/ObjectAnimationState.h"
+#include "rigging/data/ObjectRigState.h"
 #include "scene/Bounds3D.h"
 #include "scene/Transform.h"
-
-struct SkinWeight
-{
-    std::uint64_t jointId = 0;
-    float weight = 0.0f;
-};
-
-using VertexSkinWeights = QVector<SkinWeight>;
-using SkinWeightTable = QVector<VertexSkinWeights>;
 
 class SceneObject
 {
@@ -71,8 +61,11 @@ public:
     void setTransformKeyframes(const TransformKeyframeTrack& keyframes);
     void setTransformKeyframe(int frame, const Transform& transform);
     bool removeTransformKeyframe(int frame);
+    bool removeTransformKeyframesInRange(int startFrame, int endFrame);
     bool duplicateTransformKeyframe(int sourceFrame, int targetFrame);
     bool offsetAllTransformKeyframes(int frameDelta);
+    bool offsetTransformKeyframesInRange(int startFrame, int endFrame, int frameDelta);
+    bool scaleAllTransformKeyframes(double scaleFactor);
     int nextTransformKeyframeAfter(int frame) const;
     int previousTransformKeyframeBefore(int frame) const;
 
@@ -97,14 +90,8 @@ private:
     QVector<int> meshHandles_;
     Transform localTransform_;
     Transform authoredTransform_;
-    QQuaternion jointOrientation_ { 1.0f, 0.0f, 0.0f, 0.0f };
-    Transform bindPoseLocalTransform_;
-    bool hasBindPose_ = false;
-    bool hasSkinBinding_ = false;
-    Transform skinBindLocalTransform_;
-    QVector<Id> skinJointIds_;
-    SkinWeightTable skinWeights_;
-    TransformKeyframeTrack transformKeyframes_;
+    ObjectRigState rigState_;
+    ObjectAnimationState animationState_;
     Bounds3D localBounds_;
     Bounds3D worldBounds_;
     bool visible_ = true;

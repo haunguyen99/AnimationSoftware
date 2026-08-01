@@ -17,7 +17,7 @@ Gate status:
 
 Progress snapshot:
 
-* done: `Task 1`, `Task 2`, `Task 3`
+* done: `Task 1`, `Task 2`, `Task 3`, `Task 4`
 * in progress: `Task 5`, `Task 6`
 
 ---
@@ -59,7 +59,7 @@ Status:
 
 Status:
 
-* chua lam
+* done
 
 ### Task 5 - Playback Navigation By Keys
 
@@ -93,6 +93,7 @@ Da vao code:
 * duplicate current key -> frame tiep theo
 * shift whole selected track `-1 / +1`
 * jump `previous/next` keyed frame
+* timeline click/drag frame-range selection foundation
 * menu actions
 * timeline buttons
 * script commands:

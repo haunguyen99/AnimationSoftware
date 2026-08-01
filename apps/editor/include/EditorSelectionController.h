@@ -4,7 +4,7 @@
 
 #include "EditorInspectorController.h"
 #include "EditorOutlinerController.h"
-#include "ScriptCommandSystem.h"
+#include "core/commands/ScriptCommandSystem.h"
 
 class QPlainTextEdit;
 class QTreeWidget;

@@ -10,8 +10,8 @@
 #include <QTextStream>
 #include <QSurfaceFormat>
 
-#include "MainWindow.h"
-#include "logging/LogCategories.h"
+#include "core/app/EditorShell.h"
+#include "core/logging/LogCategories.h"
 
 namespace
 {
@@ -99,8 +99,8 @@ int main(int argc, char* argv[])
             << "depth=" << format.depthBufferSize()
             << "stencil=" << format.stencilBufferSize();
 
-    MainWindow window;
-    window.show();
+    EditorShell shell;
+    shell.show();
 
     return app.exec();
 }

@@ -4,7 +4,7 @@
 
 #include <functional>
 
-#include "ScriptCommandSystem.h"
+#include "core/commands/ScriptCommandSystem.h"
 #include "scene/Scene.h"
 
 namespace EditorDocumentController

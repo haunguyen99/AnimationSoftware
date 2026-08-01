@@ -1,6 +1,6 @@
 #include "rendering/ShaderUtils.h"
 
-#include "logging/LogCategories.h"
+#include "core/logging/LogCategories.h"
 
 #include <QDebug>
 #include <QOpenGLFunctions_3_3_Core>

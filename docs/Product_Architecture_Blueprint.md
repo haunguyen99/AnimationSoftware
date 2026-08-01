@@ -427,7 +427,7 @@ De tranh scope drift, moi thay doi nen map vao 1 trong 7 module sau.
 
 Bao gom:
 
-* `MainWindow`
+* `EditorShell`
 * docking layout
 * panel hosting
 * menu/toolbar/action wiring

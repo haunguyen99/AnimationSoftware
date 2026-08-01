@@ -6,7 +6,7 @@
 #include "io/FbxImportMessages.h"
 #include "io/FbxSceneBuilder.h"
 #include "io/FbxImportValidation.h"
-#include "logging/LogCategories.h"
+#include "core/logging/LogCategories.h"
 
 FbxImportResult FbxImporter::importFile(const QString& filePath) const
 {

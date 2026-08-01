@@ -74,7 +74,7 @@ In scope:
 ## UML
 
 ```text
-MainWindow
+EditorShell
   |- OutlinerPanel
        |- OutlinerTreeBuilder
             -> Scene
@@ -96,7 +96,7 @@ OutlinerTreeBuilder --> SceneObject (read-only)
 ```text
 Import FBX success
   -> ViewportWidget cap nhat Scene
-  -> MainWindow goi refresh outliner
+  -> EditorShell goi refresh outliner
   -> OutlinerTreeBuilder doc Scene roots
   -> apply presentation policy
   -> tao tree items
@@ -137,7 +137,7 @@ Rule:
 
 ## Module Boundaries
 
-`MainWindow`
+`EditorShell`
 
 * host panel
 * trigger refresh
@@ -189,7 +189,7 @@ Reason:
 ## Risks
 
 * heuristic `RootNode` co the an nham node user thuc su muon thay
-* policy presentation neu viet vo `MainWindow` se thanh shallow utility kho mo rong
+* policy presentation neu viet vo `EditorShell` se thanh shallow utility kho mo rong
 * append nhieu file co the lam tree crowded neu khong co rule hien thi nhat quan
 
 Risk control:

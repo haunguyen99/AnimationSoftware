@@ -8,7 +8,7 @@
 #include <QVector3D>
 
 #include "io/FbxImportResult.h"
-#include "logging/LogCategories.h"
+#include "core/logging/LogCategories.h"
 #include "scene/MeshData.h"
 #include "scene/SceneMath.h"
 

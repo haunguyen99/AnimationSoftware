@@ -42,14 +42,14 @@ Luu y:
 Nang nhat hien tai nam o:
 
 * [apps/editor/main.cpp](</E:/Animation Software/apps/editor/main.cpp>)
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h>)
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
-* [apps/editor/include/MainWindowContexts.h](</E:/Animation Software/apps/editor/include/MainWindowContexts.h>)
-* [apps/editor/src/MainWindowContexts.cpp](</E:/Animation Software/apps/editor/src/MainWindowContexts.cpp>)
-* [apps/editor/include/ScriptCommandSystem.h](</E:/Animation Software/apps/editor/include/ScriptCommandSystem.h>)
-* [apps/editor/src/ScriptCommandSystem.cpp](</E:/Animation Software/apps/editor/src/ScriptCommandSystem.cpp>)
-* [src/logging/LogCategories.h](</E:/Animation Software/src/logging/LogCategories.h>)
-* [src/logging/LogCategories.cpp](</E:/Animation Software/src/logging/LogCategories.cpp>)
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
+* [src/core/app/EditorShellContexts.h](</E:/Animation Software/src/core/app/EditorShellContexts.h>)
+* [src/core/app/EditorShellContexts.cpp](</E:/Animation Software/src/core/app/EditorShellContexts.cpp>)
+* [src/core/commands/ScriptCommandSystem.h](</E:/Animation Software/src/core/commands/ScriptCommandSystem.h>)
+* [src/core/commands/ScriptCommandSystem.cpp](</E:/Animation Software/src/core/commands/ScriptCommandSystem.cpp>)
+* [src/core/logging/LogCategories.h](</E:/Animation Software/src/core/logging/LogCategories.h>)
+* [src/core/logging/LogCategories.cpp](</E:/Animation Software/src/core/logging/LogCategories.cpp>)
 
 ### Current responsibility in code
 
@@ -67,14 +67,14 @@ Nang nhat hien tai nam o:
 ### Notes
 
 `Core` hien tai chua nam thanh mot folder rieng.
-Phan lon dang song trong `apps/editor`, voi `MainWindow` la adapter shell trung tam.
+Phan lon dang song trong `apps/editor`, voi `EditorShell` la adapter shell trung tam.
 
 Dieu nay co nghia:
 
 * `Core` da ton tai ve mat `module`
 * nhung `interface` hien tai van dang kha rong
 * trong docs, nen goi `module` nay la `EditorShell`
-* `MainWindow` thuoc `Core/Application`, khong nen duoc doc nhu feature module host
+* `EditorShell` thuoc `Core/Application`, khong nen duoc doc nhu feature module host
 
 ---
 
@@ -85,8 +85,8 @@ Dieu nay co nghia:
 Hien tai `Engine` chua thanh mot package/doc lap.
 No dang phan tan o:
 
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h>)
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
 * [apps/editor/include/ViewportWidget.h](</E:/Animation Software/apps/editor/include/ViewportWidget.h>)
 * [apps/editor/src/ViewportWidget.cpp](</E:/Animation Software/apps/editor/src/ViewportWidget.cpp>)
 * [src/scene/Scene.h](</E:/Animation Software/src/scene/Scene.h>)
@@ -108,7 +108,7 @@ No dang phan tan o:
 
 No chua co seam rieng ma dang bi chia giua:
 
-* `MainWindow` cho playback/UI coordination
+* `EditorShell` cho playback/UI coordination
 * `ViewportWidget` cho runtime mutation/render refresh
 * `Scene` cho evaluation data
 
@@ -123,7 +123,7 @@ Noi cach khac:
 
 ### Current code map
 
-`Scene` la `module` ro nhat trong repo hien tai, nam o:
+`Scene` la canonical graph package ro nhat trong repo hien tai, nam o:
 
 * [src/scene/Scene.h](</E:/Animation Software/src/scene/Scene.h>)
 * [src/scene/Scene.cpp](</E:/Animation Software/src/scene/Scene.cpp>)
@@ -143,6 +143,15 @@ Noi cach khac:
 `Scene` hien dang la source of truth cho:
 
 * object identity
+* hierarchy
+* transform co ban
+* mesh registry
+* bounds va visibility
+
+Bridge con lai:
+
+* facade API sang `Animation`
+* facade API sang `Rigging`
 * hierarchy
 * transforms
 * bounds
@@ -210,20 +219,22 @@ Day la 1 map kha tot cho `Rendering`, du van con dinh mot phan scene mutation tr
 
 ### Current code map
 
-`Animation` hien tai chua co folder rieng.
-No dang song chu yeu o:
+`Animation` khong con song chu yeu trong `src/scene` nua.
+No hien tai nam chu yeu o:
 
-* [src/scene/AnimationData.h](</E:/Animation Software/src/scene/AnimationData.h>)
+* [src/animation/data/TransformKeyframeTrack.h](</E:/Animation Software/src/animation/data/TransformKeyframeTrack.h>)
+* [src/animation/data/ObjectAnimationState.h](</E:/Animation Software/src/animation/data/ObjectAnimationState.h>)
+* [src/animation/data/ObjectAnimationState.cpp](</E:/Animation Software/src/animation/data/ObjectAnimationState.cpp>)
+* [src/animation/scene/SceneAnimationState.h](</E:/Animation Software/src/animation/scene/SceneAnimationState.h>)
+* [src/animation/scene/SceneAnimationState.cpp](</E:/Animation Software/src/animation/scene/SceneAnimationState.cpp>)
 * [src/scene/Scene.h](</E:/Animation Software/src/scene/Scene.h>)
-* [src/scene/Scene.cpp](</E:/Animation Software/src/scene/Scene.cpp>)
 * [src/scene/SceneObject.h](</E:/Animation Software/src/scene/SceneObject.h>)
-* [src/scene/SceneObject.cpp](</E:/Animation Software/src/scene/SceneObject.cpp>)
 * [apps/editor/include/KeyframeTimelineWidget.h](</E:/Animation Software/apps/editor/include/KeyframeTimelineWidget.h>)
 * [apps/editor/src/KeyframeTimelineWidget.cpp](</E:/Animation Software/apps/editor/src/KeyframeTimelineWidget.cpp>)
-* [apps/editor/include/ScriptCommandSystem.h](</E:/Animation Software/apps/editor/include/ScriptCommandSystem.h>)
-* [apps/editor/src/ScriptCommandSystem.cpp](</E:/Animation Software/apps/editor/src/ScriptCommandSystem.cpp>)
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h>)
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [src/core/commands/ScriptCommandSystem.h](</E:/Animation Software/src/core/commands/ScriptCommandSystem.h>)
+* [src/core/commands/ScriptCommandSystem.cpp](</E:/Animation Software/src/core/commands/ScriptCommandSystem.cpp>)
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
 
 ### Current responsibility in code
 
@@ -246,7 +257,7 @@ Hien tai no bi chia thanh 3 tang:
 
 * data va ops trong `Scene` / `SceneObject`
 * command seam trong `ScriptCommandSystem`
-* workflow/UI trong `MainWindow` va `KeyframeTimelineWidget`
+* workflow/UI trong `EditorShell` va `KeyframeTimelineWidget`
 
 Noi nay la ung vien refactor tot nhat neu muon co `Animation/` folder ro rang sau nay.
 
@@ -256,15 +267,17 @@ Noi nay la ung vien refactor tot nhat neu muon co `Animation/` folder ro rang sa
 
 ### Current code map
 
-`Rigging` hien tai cung chua co folder rieng.
-No dang song chu yeu o:
+`Rigging` khong con song chu yeu trong `src/scene` nua.
+No hien tai nam chu yeu o:
 
+* [src/rigging/data/ObjectRigState.h](</E:/Animation Software/src/rigging/data/ObjectRigState.h>)
+* [src/rigging/data/ObjectRigState.cpp](</E:/Animation Software/src/rigging/data/ObjectRigState.cpp>)
+* [src/rigging/scene/SceneRiggingController.h](</E:/Animation Software/src/rigging/scene/SceneRiggingController.h>)
+* [src/rigging/scene/SceneRiggingController.cpp](</E:/Animation Software/src/rigging/scene/SceneRiggingController.cpp>)
 * [src/scene/Scene.h](</E:/Animation Software/src/scene/Scene.h>)
-* [src/scene/Scene.cpp](</E:/Animation Software/src/scene/Scene.cpp>)
 * [src/scene/SceneObject.h](</E:/Animation Software/src/scene/SceneObject.h>)
-* [src/scene/SceneObject.cpp](</E:/Animation Software/src/scene/SceneObject.cpp>)
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h>)
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
 * [apps/editor/include/ViewportWidget.h](</E:/Animation Software/apps/editor/include/ViewportWidget.h>)
 * [apps/editor/src/ViewportWidget.cpp](</E:/Animation Software/apps/editor/src/ViewportWidget.cpp>)
 * [src/rendering/ViewportRenderer.h](</E:/Animation Software/src/rendering/ViewportRenderer.h>)
@@ -338,7 +351,7 @@ Test hien tai map vao `module` nhu sau:
 Neu map ngan gon 6 `module` vao code hien tai:
 
 * `Core` = `apps/editor` + `src/logging`
-* `Engine` = orchestration dang nam rai trong `MainWindow`, `ViewportWidget`, `Scene`
+* `Engine` = orchestration dang nam rai trong `EditorShell`, `ViewportWidget`, `Scene`
 * `Scene` = `src/scene`
 * `Rendering` = `src/rendering` + `src/viewport` + viewport widgets
 * `Animation` = `src/scene` + timeline/script/editor workflow
@@ -352,7 +365,7 @@ Trong giai doan hien tai, team nen doc code voi cach hieu sau:
 
 * `src/scene` = canonical domain home, dang chua ca `Scene`, `Animation`, `Rigging`
 * `apps/editor` = `Core/Application` workflow surface va mot phan `Engine`
-* `MainWindow` + `MainWindowContexts` = concrete adapter cua `EditorShell`
+* `EditorShell` + `EditorShellContexts` = concrete adapter cua `EditorShell`
 * `src/rendering` + `src/viewport` = `Rendering`
 * `src/io` = adapter layer cap du lieu cho cac `module` domain
 
@@ -360,4 +373,4 @@ Neu can tach code dan dan ma khong pha beta rhythm, thu tu refactor hop ly nhat 
 
 1. lam ro `Animation` seam trong `src/scene`
 2. lam ro `Rigging` seam trong `src/scene`
-3. rut `Engine` orchestration khoi `MainWindow`
+3. rut `Engine` orchestration khoi `EditorShell`

@@ -72,7 +72,7 @@ In scope:
 ## UML
 
 ```text
-MainWindow
+EditorShell
   |- MenuBar
   |- ToolBar
   |- StatusBar
@@ -84,9 +84,9 @@ MainWindow
 Quan he:
 
 ```text
-MainWindow --> ViewportWidget
-MainWindow --> OutlinerPanel
-MainWindow --> InspectorPanel
+EditorShell --> ViewportWidget
+EditorShell --> OutlinerPanel
+EditorShell --> InspectorPanel
 OutlinerPanel --> Scene read model
 InspectorPanel --> selected object read model
 ```
@@ -97,14 +97,14 @@ InspectorPanel --> selected object read model
 
 ```text
 App start
-  -> MainWindow tao shell layout
+  -> EditorShell tao shell layout
   -> ViewportWidget khoi tao viewport
   -> panels vao trang thai empty
 
 Import FBX success
   -> ViewportWidget cap nhat Scene
-  -> MainWindow nhan import success
-  -> MainWindow refresh shell panels
+  -> EditorShell nhan import success
+  -> EditorShell refresh shell panels
   -> Outliner doc Scene de hien tree
   -> Inspector ve "no selection" hoac state mac dinh
 ```
@@ -123,13 +123,13 @@ Khong co scene
 Pattern chinh:
 
 * `EditorShell` = `module` shell cap `Core/Application`
-* `MainWindow` = adapter `Qt Widgets` hien tai dang implement `EditorShell`
+* `EditorShell` = adapter `Qt Widgets` hien tai dang implement `EditorShell`
 * `ViewportWidget` = viewport adapter
 * `Outliner` / `Inspector` = read-only presentation modules trong `v0.2`
 
 Rule:
 
-* shell state orchestration nam o `EditorShell`, hien duoc host boi `MainWindow`
+* shell state orchestration nam o `EditorShell`, hien duoc host boi `EditorShell`
 * scene source of truth van nam o `ViewportWidget` / `Scene`
 * panel khong tu sua domain data trong phase nay
 
@@ -137,7 +137,7 @@ Rule:
 
 ## Module Boundaries
 
-`EditorShell` / `MainWindow`
+`EditorShell` / `EditorShell`
 
 * so huu layout shell
 * so huu action UI muc app-shell
@@ -147,7 +147,7 @@ Rule:
 Current ownership note:
 
 * ve `module`, day la phan cua `Core/Application`
-* ve implementation, `MainWindow` la concrete adapter hien tai
+* ve implementation, `EditorShell` la concrete adapter hien tai
 * khong nen doc no nhu feature module host cho `Scene`, `Animation`, `Rigging`, hay `Rendering`
 
 `ViewportWidget`
@@ -170,10 +170,10 @@ Current ownership note:
 
 ## Risks
 
-* `MainWindow` thanh module qua shallow neu om ca shell policy + selection policy + import policy
+* `EditorShell` thanh module qua shallow neu om ca shell policy + selection policy + import policy
 * shell state co the bi sync sai sau import fail
 * panel update truc tiep tu `ViewportWidget` co the dan toi coupling tang dan
-* neu them panel nhanh ma khong khoa boundary, feature sau se tiep tuc don logic vao `MainWindow`
+* neu them panel nhanh ma khong khoa boundary, feature sau se tiep tuc don logic vao `EditorShell`
 
 ---
 
@@ -183,4 +183,4 @@ Current ownership note:
 
 2. Empty state cua `Outliner` / `Inspector` co can text huong dan nhe cho user, hay chi can de rong?
 
-3. Co can tach `OutlinerPanel` va `InspectorPanel` thanh class rieng ngay tu dau, hay de `MainWindow` host truc tiep trong vong dau?
+3. Co can tach `OutlinerPanel` va `InspectorPanel` thanh class rieng ngay tu dau, hay de `EditorShell` host truc tiep trong vong dau?

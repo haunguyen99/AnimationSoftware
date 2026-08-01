@@ -96,7 +96,7 @@ Da co:
 * root `CMakeLists.txt`
 * root `CMakePresets.json`
 * app shell tai `apps/editor/`
-* `MainWindow`
+* `EditorShell`
 * `ViewportWidget`
 * `EditorCamera`
 * `ViewportRenderer`
@@ -106,7 +106,7 @@ Da co:
 * `Bounds3D`
 * `Transform`
 * `FbxImporter`
-* `src/logging/LogCategories.*`
+* `src/core/logging/LogCategories.*`
 * `docs/adr/`
 * `docs/Beta_Manual_QA.md`
 * `docs/TROUBLESHOOTING.md`
@@ -247,9 +247,9 @@ Da xac nhan:
 
 Uu tien gan nhat:
 
-1. implement `v0.6 Phase 1 - Key Editing Core`
-2. manual QA app cho `duplicate / shift / previous-next key`
-3. quyet co mo `Task 4 - Timeline Range Foundation` ngay hay khong
+1. manual QA app cho `duplicate / shift / previous-next key`
+2. manual QA app cho `timeline frame/range selection`
+3. quyet co mo range-based key ops tiep theo tren timeline selection foundation
 
 ---
 

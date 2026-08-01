@@ -201,7 +201,7 @@ Phu thuoc san co:
 * `PhoenixSceneDocument`
 * `ViewportRenderer`
 * `ViewportWidget`
-* `MainWindow`
+* `EditorShell`
 * `bindPose` data tu `v0.4`
 * `jointOrientation` split theo `ADR-009`
 

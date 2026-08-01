@@ -1,9 +1,9 @@
 #include "rendering/ViewportRenderer.h"
 
-#include "logging/LogCategories.h"
+#include "core/logging/LogCategories.h"
+#include "rendering/geometry/ViewportOverlayGeometryBuilder.h"
+#include "rendering/scene/ViewportRenderSceneAdapter.h"
 #include "rendering/ShaderUtils.h"
-#include "scene/Scene.h"
-#include "scene/SceneMath.h"
 #include "viewport/EditorCamera.h"
 
 #include <QDebug>
@@ -13,9 +13,6 @@
 
 namespace
 {
-constexpr int kGizmoArcSegments = 48;
-constexpr float kBasisParallelThreshold = 0.95f;
-
 QString vertexShaderSource()
 {
     return R"(
@@ -25,6 +22,7 @@ QString vertexShaderSource()
         layout(location = 2) in vec3 inColor;
 
         uniform mat4 uMvp;
+        uniform mat4 uModel;
         uniform mat4 uView;
         uniform bool uUseLighting;
 
@@ -35,7 +33,7 @@ QString vertexShaderSource()
         {
             vColor = inColor;
 
-            vec3 normal = normalize(mat3(uView) * inNormal);
+            vec3 normal = normalize(mat3(uView * uModel) * inNormal);
             // Editor viewports prioritize readability over physically-correct
             // shading, especially in front/side/top orthographic views.
             vec3 keyLightDir = normalize(vec3(0.0, 0.0, 1.0));
@@ -78,126 +76,16 @@ void appendLine(QVector<ViewportRenderer::Vertex>& vertices,
     vertices.append({ a, normal, color });
     vertices.append({ b, normal, color });
 }
-
-void appendTranslateAxis(QVector<ViewportRenderer::Vertex>& vertices,
-    const QVector3D& origin,
-    const QVector3D& axis,
-    const QVector3D& color,
-    float size)
-{
-    const QVector3D normalizedAxis = axis.normalized();
-    const QVector3D tip = origin + normalizedAxis * size;
-    appendLine(vertices, origin, tip, color);
-
-    QVector3D tangent = QVector3D::crossProduct(normalizedAxis, QVector3D(0.0f, 1.0f, 0.0f));
-    if (tangent.lengthSquared() < 0.0001f) {
-        tangent = QVector3D::crossProduct(normalizedAxis, QVector3D(1.0f, 0.0f, 0.0f));
-    }
-    tangent.normalize();
-    QVector3D bitangent = QVector3D::crossProduct(normalizedAxis, tangent).normalized();
-
-    const QVector3D back = normalizedAxis * (size * 0.22f);
-    const QVector3D sideA = tangent * size * 0.18f;
-    const QVector3D sideB = bitangent * size * 0.18f;
-    appendLine(vertices, tip, tip - back + sideA, color);
-    appendLine(vertices, tip, tip - back - sideA, color);
-    appendLine(vertices, tip, tip - back + sideB, color);
-    appendLine(vertices, tip, tip - back - sideB, color);
-}
-
-void appendScaleAxis(QVector<ViewportRenderer::Vertex>& vertices,
-    const QVector3D& origin,
-    const QVector3D& axis,
-    const QVector3D& color,
-    float size)
-{
-    const QVector3D normalizedAxis = axis.normalized();
-    const QVector3D handleCenter = origin + normalizedAxis * size;
-    appendLine(vertices, origin, handleCenter, color);
-
-    QVector3D tangent = QVector3D::crossProduct(normalizedAxis, QVector3D(0.0f, 1.0f, 0.0f));
-    if (tangent.lengthSquared() < 0.0001f) {
-        tangent = QVector3D::crossProduct(normalizedAxis, QVector3D(1.0f, 0.0f, 0.0f));
-    }
-    tangent.normalize();
-    QVector3D bitangent = QVector3D::crossProduct(normalizedAxis, tangent).normalized();
-
-    const QVector3D sideA = tangent * size * 0.12f;
-    const QVector3D sideB = bitangent * size * 0.12f;
-
-    const QVector3D p1 = handleCenter - sideA - sideB;
-    const QVector3D p2 = handleCenter + sideA - sideB;
-    const QVector3D p3 = handleCenter + sideA + sideB;
-    const QVector3D p4 = handleCenter - sideA + sideB;
-
-    appendLine(vertices, p1, p2, color);
-    appendLine(vertices, p2, p3, color);
-    appendLine(vertices, p3, p4, color);
-    appendLine(vertices, p4, p1, color);
-}
-
-void appendRotateRing(QVector<ViewportRenderer::Vertex>& vertices,
-    const QVector3D& origin,
-    const QVector3D& axis,
-    const QVector3D& color,
-    float size)
-{
-    const QVector3D normalAxis = axis.normalized();
-    QVector3D basisA = QVector3D::crossProduct(normalAxis, QVector3D(0.0f, 1.0f, 0.0f));
-    if (basisA.lengthSquared() < 0.0001f) {
-        basisA = QVector3D::crossProduct(normalAxis, QVector3D(1.0f, 0.0f, 0.0f));
-    }
-    basisA.normalize();
-    const QVector3D basisB = QVector3D::crossProduct(normalAxis, basisA).normalized();
-
-    for (int segment = 0; segment < kGizmoArcSegments; ++segment) {
-        const float angleA = (static_cast<float>(segment) / kGizmoArcSegments) * 360.0f;
-        const float angleB = (static_cast<float>(segment + 1) / kGizmoArcSegments) * 360.0f;
-
-        const float radiansA = qDegreesToRadians(angleA);
-        const float radiansB = qDegreesToRadians(angleB);
-
-        const QVector3D pointA = origin + (basisA * qCos(radiansA) + basisB * qSin(radiansA)) * size;
-        const QVector3D pointB = origin + (basisA * qCos(radiansB) + basisB * qSin(radiansB)) * size;
-
-        appendLine(vertices, pointA, pointB, color);
-    }
-}
-
-void appendJointDiamond(QVector<ViewportRenderer::Vertex>& vertices,
-    const QVector3D& origin,
-    const QVector3D& color,
-    float size)
-{
-    const QVector3D top = origin + QVector3D(0.0f, size, 0.0f);
-    const QVector3D bottom = origin + QVector3D(0.0f, -size, 0.0f);
-    const QVector3D left = origin + QVector3D(-size, 0.0f, 0.0f);
-    const QVector3D right = origin + QVector3D(size, 0.0f, 0.0f);
-    const QVector3D front = origin + QVector3D(0.0f, 0.0f, size);
-    const QVector3D back = origin + QVector3D(0.0f, 0.0f, -size);
-
-    appendLine(vertices, top, left, color);
-    appendLine(vertices, top, right, color);
-    appendLine(vertices, top, front, color);
-    appendLine(vertices, top, back, color);
-
-    appendLine(vertices, bottom, left, color);
-    appendLine(vertices, bottom, right, color);
-    appendLine(vertices, bottom, front, color);
-    appendLine(vertices, bottom, back, color);
-
-    appendLine(vertices, left, front, color);
-    appendLine(vertices, front, right, color);
-    appendLine(vertices, right, back, color);
-    appendLine(vertices, back, left, color);
-}
 }
 
 ViewportRenderer::ViewportRenderer()
     : vertexBuffer_(QOpenGLBuffer::VertexBuffer)
     , importedVertexBuffer_(QOpenGLBuffer::VertexBuffer)
     , importedIndexBuffer_(QOpenGLBuffer::IndexBuffer)
+    , previewImportedVertexBuffer_(QOpenGLBuffer::VertexBuffer)
+    , previewImportedIndexBuffer_(QOpenGLBuffer::IndexBuffer)
     , jointVertexBuffer_(QOpenGLBuffer::VertexBuffer)
+    , previewJointVertexBuffer_(QOpenGLBuffer::VertexBuffer)
     , selectionVertexBuffer_(QOpenGLBuffer::VertexBuffer)
     , gizmoVertexBuffer_(QOpenGLBuffer::VertexBuffer)
 {
@@ -231,6 +119,14 @@ void ViewportRenderer::destroyGlResources()
         jointVao_.destroy();
     }
 
+    if (previewImportedVao_.isCreated()) {
+        previewImportedVao_.destroy();
+    }
+
+    if (previewJointVao_.isCreated()) {
+        previewJointVao_.destroy();
+    }
+
     if (selectionVao_.isCreated()) {
         selectionVao_.destroy();
     }
@@ -255,6 +151,18 @@ void ViewportRenderer::destroyGlResources()
         jointVertexBuffer_.destroy();
     }
 
+    if (previewImportedVertexBuffer_.isCreated()) {
+        previewImportedVertexBuffer_.destroy();
+    }
+
+    if (previewImportedIndexBuffer_.isCreated()) {
+        previewImportedIndexBuffer_.destroy();
+    }
+
+    if (previewJointVertexBuffer_.isCreated()) {
+        previewJointVertexBuffer_.destroy();
+    }
+
     if (selectionVertexBuffer_.isCreated()) {
         selectionVertexBuffer_.destroy();
     }
@@ -277,9 +185,13 @@ bool ViewportRenderer::initialize(QOpenGLFunctions_3_3_Core* functions)
     axisVertices_.clear();
     importedVertices_.clear();
     importedIndices_.clear();
+    previewImportedVertices_.clear();
+    previewImportedIndices_.clear();
     jointVertices_.clear();
+    previewJointVertices_.clear();
     selectionVertices_.clear();
     gizmoVertices_.clear();
+    previewModelMatrix_.setToIdentity();
 
     shaderProgram_ = ShaderUtils::buildProgram(vertexShaderSource(), fragmentShaderSource());
     if (shaderProgram_ == nullptr) {
@@ -358,6 +270,35 @@ bool ViewportRenderer::initialize(QOpenGLFunctions_3_3_Core* functions)
     }
     jointVao_.release();
 
+    if (!previewImportedVao_.create()) {
+        qCWarning(logViewport) << "failed to create preview imported mesh VAO.";
+        return false;
+    }
+    previewImportedVao_.bind();
+    if (!previewImportedVertexBuffer_.create()) {
+        qCWarning(logViewport) << "failed to create preview imported mesh vertex buffer.";
+        previewImportedVao_.release();
+        return false;
+    }
+    if (!previewImportedIndexBuffer_.create()) {
+        qCWarning(logViewport) << "failed to create preview imported mesh index buffer.";
+        previewImportedVao_.release();
+        return false;
+    }
+    previewImportedVao_.release();
+
+    if (!previewJointVao_.create()) {
+        qCWarning(logViewport) << "failed to create preview joint VAO.";
+        return false;
+    }
+    previewJointVao_.bind();
+    if (!previewJointVertexBuffer_.create()) {
+        qCWarning(logViewport) << "failed to create preview joint vertex buffer.";
+        previewJointVao_.release();
+        return false;
+    }
+    previewJointVao_.release();
+
     if (!gizmoVao_.create()) {
         qCWarning(logViewport) << "failed to create gizmo VAO.";
         return false;
@@ -410,6 +351,7 @@ void ViewportRenderer::render(const EditorCamera& camera, const ViewportRenderOp
 
     shaderProgram_->bind();
     shaderProgram_->setUniformValue("uView", viewMatrix);
+    shaderProgram_->setUniformValue("uModel", QMatrix4x4());
 
     if (!importedVertices_.isEmpty() && !importedIndices_.isEmpty()) {
         shaderProgram_->setUniformValue("uMvp", meshMvp);
@@ -440,6 +382,19 @@ void ViewportRenderer::render(const EditorCamera& camera, const ViewportRenderOp
         importedVao_.release();
     }
 
+    if (!previewImportedVertices_.isEmpty() && !previewImportedIndices_.isEmpty()) {
+        const QMatrix4x4 previewMvp = camera.projectionMatrix() * viewMatrix * previewModelMatrix_;
+        shaderProgram_->setUniformValue("uModel", previewModelMatrix_);
+        shaderProgram_->setUniformValue("uMvp", previewMvp);
+        shaderProgram_->setUniformValue("uUseLighting", true);
+        previewImportedVao_.bind();
+        previewImportedIndexBuffer_.bind();
+        functions_->glDrawElements(GL_TRIANGLES, previewImportedIndices_.size(), GL_UNSIGNED_INT, nullptr);
+        previewImportedIndexBuffer_.release();
+        previewImportedVao_.release();
+        shaderProgram_->setUniformValue("uModel", QMatrix4x4());
+    }
+
     if (options.showSelectionOutline && !selectionVertices_.isEmpty()) {
         shaderProgram_->setUniformValue("uMvp", meshMvp);
         shaderProgram_->setUniformValue("uUseLighting", false);
@@ -465,15 +420,32 @@ void ViewportRenderer::render(const EditorCamera& camera, const ViewportRenderOp
         jointVao_.release();
     }
 
+    if (!previewJointVertices_.isEmpty()) {
+        const QMatrix4x4 previewMvp = camera.projectionMatrix() * viewMatrix * previewModelMatrix_;
+        shaderProgram_->setUniformValue("uModel", previewModelMatrix_);
+        shaderProgram_->setUniformValue("uMvp", previewMvp);
+        shaderProgram_->setUniformValue("uUseLighting", false);
+        previewJointVao_.bind();
+        functions_->glDisable(GL_CULL_FACE);
+        functions_->glDisable(GL_DEPTH_TEST);
+        functions_->glDepthMask(GL_FALSE);
+        functions_->glLineWidth(1.0f);
+        functions_->glDrawArrays(GL_LINES, 0, previewJointVertices_.size());
+        functions_->glEnable(GL_DEPTH_TEST);
+        previewJointVao_.release();
+        shaderProgram_->setUniformValue("uModel", QMatrix4x4());
+    }
+
     if (!gizmoVertices_.isEmpty()) {
         shaderProgram_->setUniformValue("uMvp", meshMvp);
         shaderProgram_->setUniformValue("uUseLighting", false);
         gizmoVao_.bind();
         functions_->glDisable(GL_CULL_FACE);
-        functions_->glEnable(GL_DEPTH_TEST);
+        functions_->glDisable(GL_DEPTH_TEST);
         functions_->glDepthMask(GL_FALSE);
-        functions_->glLineWidth(1.0f);
+        functions_->glLineWidth(3.0f);
         functions_->glDrawArrays(GL_LINES, 0, gizmoVertices_.size());
+        functions_->glEnable(GL_DEPTH_TEST);
         gizmoVao_.release();
     }
 
@@ -543,90 +515,55 @@ void ViewportRenderer::uploadGeometry()
     vertexBuffer_.allocate(vertices.constData(), vertices.size() * sizeof(Vertex));
 }
 
-void ViewportRenderer::syncScene(const Scene& scene)
+void ViewportRenderer::syncScene(const ViewportRenderSceneData& sceneData)
 {
     Q_ASSERT(functions_ != nullptr);
     if (functions_ == nullptr || !importedVertexBuffer_.isCreated() || !importedIndexBuffer_.isCreated()) {
         return;
     }
 
-    uploadImportedMesh(scene);
-    uploadJointGeometry(scene);
+    importedVertices_ = sceneData.importedVertices;
+    importedIndices_ = sceneData.importedIndices;
+    jointVertices_ = sceneData.jointVertices;
+
+    uploadImportedMesh();
+    uploadJointGeometry();
 }
 
 void ViewportRenderer::setSelectedBounds(const Bounds3D& bounds)
 {
-    selectionVertices_.clear();
-    if (!bounds.isValid()) {
-        uploadSelectionBounds();
-        return;
-    }
-
-    const QVector3D minPoint = bounds.min();
-    const QVector3D maxPoint = bounds.max();
-
-    const QVector3D p000(minPoint.x(), minPoint.y(), minPoint.z());
-    const QVector3D p100(maxPoint.x(), minPoint.y(), minPoint.z());
-    const QVector3D p010(minPoint.x(), maxPoint.y(), minPoint.z());
-    const QVector3D p110(maxPoint.x(), maxPoint.y(), minPoint.z());
-    const QVector3D p001(minPoint.x(), minPoint.y(), maxPoint.z());
-    const QVector3D p101(maxPoint.x(), minPoint.y(), maxPoint.z());
-    const QVector3D p011(minPoint.x(), maxPoint.y(), maxPoint.z());
-    const QVector3D p111(maxPoint.x(), maxPoint.y(), maxPoint.z());
-
-    const QVector3D color(1.0f, 0.82f, 0.24f);
-    const QVector3D normal(0.0f, 1.0f, 0.0f);
-
-    auto addLine = [this, &color, &normal](const QVector3D& a, const QVector3D& b) {
-        selectionVertices_.append({ a, normal, color });
-        selectionVertices_.append({ b, normal, color });
-    };
-
-    addLine(p000, p100);
-    addLine(p100, p110);
-    addLine(p110, p010);
-    addLine(p010, p000);
-
-    addLine(p001, p101);
-    addLine(p101, p111);
-    addLine(p111, p011);
-    addLine(p011, p001);
-
-    addLine(p000, p001);
-    addLine(p100, p101);
-    addLine(p110, p111);
-    addLine(p010, p011);
-
+    selectionVertices_ = ViewportOverlayGeometryBuilder::buildSelectionBounds(bounds);
     uploadSelectionBounds();
+}
+
+void ViewportRenderer::setPreviewScene(const ViewportRenderSceneData& sceneData, const QMatrix4x4& modelMatrix)
+{
+    previewImportedVertices_ = sceneData.importedVertices;
+    previewImportedIndices_ = sceneData.importedIndices;
+    previewJointVertices_ = sceneData.jointVertices;
+    previewModelMatrix_ = modelMatrix;
+    uploadPreviewMesh();
+    uploadPreviewJointGeometry();
+}
+
+void ViewportRenderer::updatePreviewTransform(const QMatrix4x4& modelMatrix)
+{
+    previewModelMatrix_ = modelMatrix;
+}
+
+void ViewportRenderer::clearPreviewScene()
+{
+    previewImportedVertices_.clear();
+    previewImportedIndices_.clear();
+    previewJointVertices_.clear();
+    previewModelMatrix_.setToIdentity();
+    uploadPreviewMesh();
+    uploadPreviewJointGeometry();
 }
 
 void ViewportRenderer::setGizmo(const QVector3D& origin, float size, GizmoMode mode, const QVector<QVector3D>& axes, const QVector3D& cameraForward, int activeAxis)
 {
-    gizmoVertices_.clear();
-    if (axes.size() < 3) {
-        uploadGizmo();
-        return;
-    }
-
-    const QVector3D xColor = activeAxis == 0 ? QVector3D(1.0f, 0.95f, 0.35f) : QVector3D(0.95f, 0.30f, 0.30f);
-    const QVector3D yColor = activeAxis == 1 ? QVector3D(1.0f, 0.95f, 0.35f) : QVector3D(0.35f, 0.95f, 0.45f);
-    const QVector3D zColor = activeAxis == 2 ? QVector3D(1.0f, 0.95f, 0.35f) : QVector3D(0.35f, 0.55f, 1.00f);
-
-    if (mode == GizmoMode::Translate) {
-        appendTranslateAxis(gizmoVertices_, origin, axes[0], xColor, size);
-        appendTranslateAxis(gizmoVertices_, origin, axes[1], yColor, size);
-        appendTranslateAxis(gizmoVertices_, origin, axes[2], zColor, size);
-    } else if (mode == GizmoMode::Rotate) {
-        appendRotateRing(gizmoVertices_, origin, axes[0], xColor, size * 0.9f);
-        appendRotateRing(gizmoVertices_, origin, axes[1], yColor, size * 0.9f);
-        appendRotateRing(gizmoVertices_, origin, axes[2], zColor, size * 0.9f);
-        appendRotateRing(gizmoVertices_, origin, -cameraForward.normalized(), QVector3D(0.62f, 0.92f, 1.0f), size * 1.15f);
-    } else {
-        appendScaleAxis(gizmoVertices_, origin, axes[0], xColor, size);
-        appendScaleAxis(gizmoVertices_, origin, axes[1], yColor, size);
-        appendScaleAxis(gizmoVertices_, origin, axes[2], zColor, size);
-    }
-
+    gizmoVertices_ = ViewportOverlayGeometryBuilder::buildGizmo(origin, size, mode, axes, cameraForward, activeAxis);
     uploadGizmo();
 }
 
@@ -636,68 +573,10 @@ void ViewportRenderer::clearGizmo()
     uploadGizmo();
 }
 
-void ViewportRenderer::uploadImportedMesh(const Scene& scene)
+void ViewportRenderer::uploadImportedMesh()
 {
     Q_ASSERT(importedVertexBuffer_.isCreated());
     Q_ASSERT(importedIndexBuffer_.isCreated());
-
-    importedVertices_.clear();
-    importedIndices_.clear();
-
-    std::uint32_t vertexOffset = 0;
-    const QVector<SceneObject::Id> objectIds = scene.allObjectIds();
-
-    for (SceneObject::Id objectId : objectIds) {
-        const SceneObject* object = scene.findObject(objectId);
-        if (object == nullptr || !object->isVisible() || object->meshHandles().isEmpty()) {
-            continue;
-        }
-
-        for (int meshHandle : object->meshHandles()) {
-            MeshData deformedMesh;
-            const MeshData* mesh = scene.findMesh(meshHandle);
-            if (mesh == nullptr) {
-                Q_ASSERT_X(false, "ViewportRenderer::uploadImportedMesh", "SceneObject references missing mesh handle.");
-                continue;
-            }
-
-            const bool useDeformedMesh = object->hasSkinBinding() && scene.buildDeformedMesh(objectId, meshHandle, &deformedMesh);
-            const MeshData& renderMesh = useDeformedMesh ? deformedMesh : *mesh;
-
-            Q_ASSERT(renderMesh.positions.size() == renderMesh.normals.size());
-            Q_ASSERT(renderMesh.positions.size() == renderMesh.colors.size());
-            Q_ASSERT((renderMesh.indices.size() % 3) == 0);
-
-            const QMatrix4x4 worldMatrix = scene.worldTransform(objectId);
-            const QMatrix3x3 normalMatrix = worldMatrix.normalMatrix();
-            const int vertexCount = renderMesh.positions.size();
-            for (int vertexIndex = 0; vertexIndex < vertexCount; ++vertexIndex) {
-                const QVector3D position = useDeformedMesh
-                    ? renderMesh.positions[vertexIndex]
-                    : worldMatrix * renderMesh.positions[vertexIndex];
-                const QVector3D sourceNormal = vertexIndex < renderMesh.normals.size()
-                    ? renderMesh.normals[vertexIndex]
-                    : QVector3D(0.0f, 1.0f, 0.0f);
-                const QVector3D normal = useDeformedMesh
-                    ? sourceNormal.normalized()
-                    : QVector3D(
-                        normalMatrix(0, 0) * sourceNormal.x() + normalMatrix(0, 1) * sourceNormal.y() + normalMatrix(0, 2) * sourceNormal.z(),
-                        normalMatrix(1, 0) * sourceNormal.x() + normalMatrix(1, 1) * sourceNormal.y() + normalMatrix(1, 2) * sourceNormal.z(),
-                        normalMatrix(2, 0) * sourceNormal.x() + normalMatrix(2, 1) * sourceNormal.y() + normalMatrix(2, 2) * sourceNormal.z()).normalized();
-                const QVector3D color = vertexIndex < renderMesh.colors.size()
-                    ? renderMesh.colors[vertexIndex]
-                    : QVector3D(0.72f, 0.74f, 0.78f);
-
-                importedVertices_.append({ position, normal, color });
-            }
-
-            for (std::uint32_t index : renderMesh.indices) {
-                importedIndices_.append(vertexOffset + index);
-            }
-
-            vertexOffset += static_cast<std::uint32_t>(renderMesh.positions.size());
-        }
-    }
 
     if (!importedVertices_.isEmpty()) {
         importedVao_.bind();
@@ -724,40 +603,42 @@ void ViewportRenderer::uploadImportedMesh(const Scene& scene)
     }
 }
 
-void ViewportRenderer::uploadJointGeometry(const Scene& scene)
+void ViewportRenderer::uploadPreviewMesh()
+{
+    if (!previewImportedVertexBuffer_.isCreated() || !previewImportedIndexBuffer_.isCreated()) {
+        return;
+    }
+
+    previewImportedVao_.bind();
+    previewImportedVertexBuffer_.bind();
+    previewImportedVertexBuffer_.allocate(
+        previewImportedVertices_.isEmpty() ? nullptr : previewImportedVertices_.constData(),
+        previewImportedVertices_.size() * sizeof(Vertex));
+
+    previewImportedIndexBuffer_.bind();
+    previewImportedIndexBuffer_.allocate(
+        previewImportedIndices_.isEmpty() ? nullptr : previewImportedIndices_.constData(),
+        previewImportedIndices_.size() * sizeof(std::uint32_t));
+
+    if (shaderProgram_) {
+        shaderProgram_->bind();
+        shaderProgram_->enableAttributeArray(0);
+        shaderProgram_->setAttributeBuffer(0, GL_FLOAT, offsetof(Vertex, position), 3, sizeof(Vertex));
+        shaderProgram_->enableAttributeArray(1);
+        shaderProgram_->setAttributeBuffer(1, GL_FLOAT, offsetof(Vertex, normal), 3, sizeof(Vertex));
+        shaderProgram_->enableAttributeArray(2);
+        shaderProgram_->setAttributeBuffer(2, GL_FLOAT, offsetof(Vertex, color), 3, sizeof(Vertex));
+        shaderProgram_->release();
+    }
+
+    previewImportedVertexBuffer_.release();
+    previewImportedIndexBuffer_.release();
+    previewImportedVao_.release();
+}
+
+void ViewportRenderer::uploadJointGeometry()
 {
     Q_ASSERT(jointVertexBuffer_.isCreated());
-
-    jointVertices_.clear();
-    const QVector3D jointColor(0.94f, 0.82f, 0.28f);
-    const QVector3D boneColor(1.0f, 0.96f, 0.50f);
-    const QVector3D accentColor(0.98f, 0.72f, 0.20f);
-
-    for (SceneObject::Id objectId : scene.allObjectIds()) {
-        const SceneObject* object = scene.findObject(objectId);
-        if (object == nullptr || !object->isVisible() || !object->isJoint()) {
-            continue;
-        }
-
-        const QVector3D position = scene.worldTransform(objectId) * QVector3D(0.0f, 0.0f, 0.0f);
-        const float markerSize = 0.11f;
-        appendJointDiamond(jointVertices_, position, jointColor, markerSize);
-
-        for (SceneObject::Id childId : object->childIds()) {
-            const SceneObject* child = scene.findObject(childId);
-            if (child == nullptr || !child->isJoint() || !child->isVisible()) {
-                continue;
-            }
-
-            const QVector3D childPosition = scene.worldTransform(childId) * QVector3D(0.0f, 0.0f, 0.0f);
-            appendLine(jointVertices_, position, childPosition, boneColor);
-
-            const QVector3D boneDirection = (childPosition - position).normalized();
-            const QVector3D accentStart = position + boneDirection * (markerSize * 0.75f);
-            const QVector3D accentEnd = position + boneDirection * (markerSize * 2.0f);
-            appendLine(jointVertices_, accentStart, accentEnd, accentColor);
-        }
-    }
 
     jointVao_.bind();
     jointVertexBuffer_.bind();
@@ -778,6 +659,31 @@ void ViewportRenderer::uploadJointGeometry(const Scene& scene)
 
     jointVertexBuffer_.release();
     jointVao_.release();
+}
+
+void ViewportRenderer::uploadPreviewJointGeometry()
+{
+    if (!previewJointVertexBuffer_.isCreated() || shaderProgram_ == nullptr) {
+        return;
+    }
+
+    previewJointVao_.bind();
+    previewJointVertexBuffer_.bind();
+    previewJointVertexBuffer_.allocate(
+        previewJointVertices_.isEmpty() ? nullptr : previewJointVertices_.constData(),
+        previewJointVertices_.size() * sizeof(Vertex));
+
+    shaderProgram_->bind();
+    shaderProgram_->enableAttributeArray(0);
+    shaderProgram_->setAttributeBuffer(0, GL_FLOAT, offsetof(Vertex, position), 3, sizeof(Vertex));
+    shaderProgram_->enableAttributeArray(1);
+    shaderProgram_->setAttributeBuffer(1, GL_FLOAT, offsetof(Vertex, normal), 3, sizeof(Vertex));
+    shaderProgram_->enableAttributeArray(2);
+    shaderProgram_->setAttributeBuffer(2, GL_FLOAT, offsetof(Vertex, color), 3, sizeof(Vertex));
+    shaderProgram_->release();
+
+    previewJointVertexBuffer_.release();
+    previewJointVao_.release();
 }
 
 void ViewportRenderer::uploadSelectionBounds()

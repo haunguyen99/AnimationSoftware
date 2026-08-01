@@ -8,7 +8,7 @@ Tai lieu nay chot ke hoach thuc thi cho buoc `1` trong thu tu tach `Engine`:
 
 Muc tieu:
 
-* giam dependency truc tiep tu `MainWindow` vao `Scene`
+* giam dependency truc tiep tu `EditorShell` vao `Scene`
 * chuyen scene lifecycle va scene snapshot orchestration ve mot seam phu hop hon
 * giu app luon build duoc sau moi buoc nho
 
@@ -24,8 +24,8 @@ Buoc nay chi tap trung vao canh:
 
 Khong lam trong buoc nay:
 
-* tach playback/time khoi `MainWindow`
-* tach key editing khoi `MainWindow`
+* tach playback/time khoi `EditorShell`
+* tach key editing khoi `EditorShell`
 * tach workflow `Rigging`
 * redesign `Rendering`
 
@@ -33,7 +33,7 @@ Khong lam trong buoc nay:
 
 ## Current Friction
 
-Hien tai `MainWindow` dang chua nhieu hanh vi le ra khong nen biet scene detail sau:
+Hien tai `EditorShell` dang chua nhieu hanh vi le ra khong nen biet scene detail sau:
 
 * scene snapshot cho undo/redo
 * save/export scene document
@@ -43,30 +43,30 @@ Hien tai `MainWindow` dang chua nhieu hanh vi le ra khong nen biet scene detail 
 
 Code neo chinh:
 
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h>)
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
 
 Hotspots cu the:
 
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:1152>) `saveSceneToPath`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:1234>) `exportAll`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:1261>) `exportSelection`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:2291>) `captureHistoryState`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:2300>) `restoreHistoryState`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:2360>) `populateOutliner`
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp:3072>) `buildExportSceneForObject`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:1152>) `saveSceneToPath`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:1234>) `exportAll`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:1261>) `exportSelection`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:2291>) `captureHistoryState`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:2300>) `restoreHistoryState`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:2360>) `populateOutliner`
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp:3072>) `buildExportSceneForObject`
 
 ---
 
 ## Refactor Target
 
-Sau buoc nay, `MainWindow` nen:
+Sau buoc nay, `EditorShell` nen:
 
 * gui intent
 * nhan ket qua
 * refresh UI theo ket qua
 
-`MainWindow` khong nen:
+`EditorShell` khong nen:
 
 * tu so huu `Scene` snapshot logic
 * tu clone subtree scene
@@ -90,7 +90,7 @@ Luu y:
 
 Files:
 
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
 * [src/io/PhoenixSceneDocument.h](</E:/Animation Software/src/io/PhoenixSceneDocument.h>)
 * [src/io/PhoenixSceneDocument.cpp](</E:/Animation Software/src/io/PhoenixSceneDocument.cpp>)
 
@@ -100,7 +100,7 @@ Change:
   * save current scene
   * export all scene
   * export selection scene
-* `MainWindow` khong goi `PhoenixSceneDocument::saveToFile(...)` truc tiep nua
+* `EditorShell` khong goi `PhoenixSceneDocument::saveToFile(...)` truc tiep nua
 
 Small deliverable:
 
@@ -118,13 +118,13 @@ Why first:
 
 Files:
 
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
 
 Change:
 
 * dua `buildExportSceneForObject(...)`
 * dua `copyObjectSubtreeToScene(...)`
-* ra khoi `MainWindow`
+* ra khoi `EditorShell`
 
 Preferred destination:
 
@@ -134,14 +134,14 @@ Preferred destination:
 Why second:
 
 * day la logic sau hon `UI`
-* deletion test ro: xoa khoi `MainWindow`, complexity khong mat ma tap trung ve noi dung hon
+* deletion test ro: xoa khoi `EditorShell`, complexity khong mat ma tap trung ve noi dung hon
 
 ### Slice 3 - Extract scene history snapshots
 
 Files:
 
-* [apps/editor/include/MainWindow.h](</E:/Animation Software/apps/editor/include/MainWindow.h>)
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [src/core/app/EditorShell.h](</E:/Animation Software/src/core/app/EditorShell.h>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
 
 Change:
 
@@ -164,11 +164,11 @@ Why third:
 
 Files:
 
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
 
 Change:
 
-* giam viec `MainWindow` tu doc `Scene` cho outliner population
+* giam viec `EditorShell` tu doc `Scene` cho outliner population
 * co the them 1 seam read model nho cho:
   * root ids
   * display nodes
@@ -179,11 +179,11 @@ Why fourth:
 * day la canh `Core -> Scene` muc read-only
 * co gia tri, nhung khong can cat som hon document/history lifecycle
 
-### Slice 5 - Leave UI refresh calls in MainWindow
+### Slice 5 - Leave UI refresh calls in EditorShell
 
 Files:
 
-* [apps/editor/src/MainWindow.cpp](</E:/Animation Software/apps/editor/src/MainWindow.cpp>)
+* [src/core/app/EditorShell.cpp](</E:/Animation Software/src/core/app/EditorShell.cpp>)
 
 Keep in place:
 
@@ -195,7 +195,7 @@ Keep in place:
 Why:
 
 * day van la trach nhiem hop ly cua `Core`
-* buoc 1 khong nen co gang “purify” het `MainWindow`
+* buoc 1 khong nen co gang “purify” het `EditorShell`
 
 ---
 
@@ -211,7 +211,7 @@ Change:
 
 * them header/source moi
 * move save/export-all helper logic vao do
-* `MainWindow` goi qua seam moi
+* `EditorShell` goi qua seam moi
 
 Verification:
 
@@ -229,7 +229,7 @@ Change:
 
 * dua `buildExportSceneForObject(...)`
 * dua `copyObjectSubtreeToScene(...)`
-* `MainWindow::exportSelection()` goi seam moi
+* `EditorShell::exportSelection()` goi seam moi
 
 Verification:
 
@@ -245,7 +245,7 @@ Goal:
 Change:
 
 * extract `EditorHistoryState`
-* move capture/restore/undo/redo orchestration ra khoi `MainWindow`
+* move capture/restore/undo/redo orchestration ra khoi `EditorShell`
 
 Verification:
 
@@ -260,7 +260,7 @@ Verification:
 
 Goal:
 
-* make `MainWindow` doc scene it hon cho outliner/selection helpers
+* make `EditorShell` doc scene it hon cho outliner/selection helpers
 
 Change:
 
@@ -288,7 +288,7 @@ Chua khoa exact API, nhung seam moi nen co huong nhu sau:
 Nguyen tac:
 
 * `interface` nen noi theo editor intent
-* khong expose qua nhieu `Scene` mutation detail cho `MainWindow`
+* khong expose qua nhieu `Scene` mutation detail cho `EditorShell`
 
 ---
 
@@ -315,7 +315,7 @@ Control:
 * giu nguyen logic clone hien tai, chi doi placement
 * test scene co mesh + joint + keyframe + skin bind
 
-### Risk 4 - MainWindow van mang interface qua rong
+### Risk 4 - EditorShell van mang interface qua rong
 
 Control:
 
@@ -328,10 +328,10 @@ Control:
 
 Buoc `Core -> Scene` duoc xem la xong khi:
 
-* `MainWindow` khong goi truc tiep `PhoenixSceneDocument::saveToFile(...)`
-* logic export selection khong con nam trong `MainWindow`
+* `EditorShell` khong goi truc tiep `PhoenixSceneDocument::saveToFile(...)`
+* logic export selection khong con nam trong `EditorShell`
 * scene snapshot/history logic da duoc dong goi sau mot seam rieng
-* so call site `viewport_->scene()` trong `MainWindow` giam ro ret o nhom document/history/export
+* so call site `viewport_->scene()` trong `EditorShell` giam ro ret o nhom document/history/export
 * build pass
 * smoke test pass cho:
   * save

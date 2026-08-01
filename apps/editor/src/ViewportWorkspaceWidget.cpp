@@ -16,21 +16,31 @@ namespace
 {
 QString inactiveFrameStyle()
 {
-    return "QFrame { border: 1px solid #343434; background: #1d1f22; }";
+    return "QFrame { border: 1px solid #3f444c; background: #1f2328; }";
 }
 
 QString activeFrameStyle()
 {
-    return "QFrame { border: 2px solid #7bc6ff; background: #1d1f22; }";
+    return "QFrame { border: 2px solid #6d8aa3; background: #1f2328; }";
+}
+
+QString inactiveWorkspaceFrameStyle()
+{
+    return "QFrame { border: 1px solid #4d5560; background: #1f2328; }";
+}
+
+QString activeWorkspaceFrameStyle()
+{
+    return "QFrame { border: 2px solid #8db3d1; background: #1f2328; }";
 }
 
 QString viewportMenuBarStyle()
 {
-    return "QMenuBar { background: #2b2d31; color: #f1f1f1; padding: 1px 4px; }"
+    return "QMenuBar { background: #31343a; color: #e7ebf1; padding: 1px 4px; }"
            "QMenuBar::item { background: transparent; padding: 4px 8px; }"
-           "QMenuBar::item:selected { background: #3a3d42; }"
-           "QMenu { background: #2b2d31; color: #f1f1f1; border: 1px solid #44484f; }"
-           "QMenu::item:selected { background: #3d7ea6; }";
+           "QMenuBar::item:selected { background: #3c424a; }"
+           "QMenu { background: #2f3338; color: #e7ebf1; border: 1px solid #444951; }"
+           "QMenu::item:selected { background: #4e667a; }";
 }
 }
 
@@ -460,6 +470,16 @@ bool ViewportWorkspaceWidget::isCameraViewVisible(CameraViewPreset preset) const
     return pane != nullptr && pane->frame != nullptr && pane->frame->isVisible();
 }
 
+void ViewportWorkspaceWidget::setWorkspaceActive(bool active)
+{
+    if (workspaceActive_ == active) {
+        return;
+    }
+
+    workspaceActive_ = active;
+    refreshActiveViewportFrameStyles();
+}
+
 bool ViewportWorkspaceWidget::eventFilter(QObject* watched, QEvent* event)
 {
     auto* viewport = dynamic_cast<ViewportWidget*>(watched);
@@ -691,7 +711,12 @@ void ViewportWorkspaceWidget::setActiveViewport(ViewportWidget* viewport)
 void ViewportWorkspaceWidget::refreshActiveViewportFrameStyles()
 {
     for (ViewPane* pane : QList<ViewPane*> { &perspectivePane_, &topPane_, &frontPane_, &sidePane_ }) {
-        pane->frame->setStyleSheet(pane->viewport == activeViewport_ ? activeFrameStyle() : inactiveFrameStyle());
+        const bool isActiveViewport = pane->viewport == activeViewport_;
+        if (workspaceActive_) {
+            pane->frame->setStyleSheet(isActiveViewport ? activeWorkspaceFrameStyle() : inactiveWorkspaceFrameStyle());
+        } else {
+            pane->frame->setStyleSheet(isActiveViewport ? activeFrameStyle() : inactiveFrameStyle());
+        }
     }
 }
 

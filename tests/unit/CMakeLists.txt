@@ -2,6 +2,13 @@ find_package(Qt6 REQUIRED COMPONENTS Gui Widgets Test OpenGLWidgets OpenGL)
 
 add_executable(scene_transform_tests
     SceneTransformTests.cpp
+    ${CMAKE_SOURCE_DIR}/src/animation/data/ObjectAnimationState.cpp
+    ${CMAKE_SOURCE_DIR}/src/animation/scene/SceneAnimationState.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/data/ObjectRigState.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/scene/JointRiggingOps.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/scene/SkinBindingOps.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/scene/SkinDeformationOps.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/scene/SceneRiggingController.cpp
     ${CMAKE_SOURCE_DIR}/src/io/PhoenixSceneDocument.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/Bounds3D.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/SceneObject.cpp
@@ -29,33 +36,45 @@ add_test(
 add_executable(editor_ui_tests
     EditorUiTests.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/AnimationTimelinePanel.cpp
-    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorAnimationEngineFacade.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorAnimationController.cpp
-    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorAnimationFlowController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorAnimationTimelineViewBuilder.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorChannelBoxController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorCreationController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorDocumentController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorFileFlowController.cpp
-    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorHistoryController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorInspectorController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorOutlinerController.cpp
-    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorPlaybackController.cpp
-    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorRiggingController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorSceneQueryController.cpp
-    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorSceneRuntimeController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorSelectionController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorScriptExecutionController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorScriptLogController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorViewportUiController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorSceneMutationController.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorViewportCommandController.cpp
-    ${CMAKE_SOURCE_DIR}/apps/editor/src/EditorViewportSceneController.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/GraphEditorPanel.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/KeyframeTimelineWidget.cpp
-    ${CMAKE_SOURCE_DIR}/apps/editor/src/MainWindow.cpp
-    ${CMAKE_SOURCE_DIR}/apps/editor/src/MainWindowContexts.cpp
-    ${CMAKE_SOURCE_DIR}/apps/editor/src/ScriptCommandSystem.cpp
+    ${CMAKE_SOURCE_DIR}/apps/editor/src/RangeSliderPanel.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/ViewportWidget.cpp
     ${CMAKE_SOURCE_DIR}/apps/editor/src/ViewportWorkspaceWidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/app/EditorShell.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/app/EditorShellContexts.cpp
+    ${CMAKE_SOURCE_DIR}/src/animation/editor/EditorAnimationFlowController.cpp
+    ${CMAKE_SOURCE_DIR}/src/animation/editor/EditorAnimationSceneMutation.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/editor/EditorRiggingController.cpp
+    ${CMAKE_SOURCE_DIR}/src/animation/data/ObjectAnimationState.cpp
+    ${CMAKE_SOURCE_DIR}/src/animation/scene/SceneAnimationState.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/data/ObjectRigState.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/scene/JointRiggingOps.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/scene/SkinBindingOps.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/scene/SkinDeformationOps.cpp
+    ${CMAKE_SOURCE_DIR}/src/rigging/scene/SceneRiggingController.cpp
+    ${CMAKE_SOURCE_DIR}/src/engine/animation/EditorAnimationEngineFacade.cpp
+    ${CMAKE_SOURCE_DIR}/src/engine/playback/EditorPlaybackController.cpp
+    ${CMAKE_SOURCE_DIR}/src/engine/runtime/EditorSceneRuntimeController.cpp
+    ${CMAKE_SOURCE_DIR}/src/engine/runtime/EditorViewportSceneController.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/commands/ScriptCommandSystem.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/history/EditorHistoryController.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/settings/EditorPreferences.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/Bounds3D.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/SceneObject.cpp
     ${CMAKE_SOURCE_DIR}/src/scene/Scene.cpp
@@ -67,8 +86,21 @@ add_executable(editor_ui_tests
     ${CMAKE_SOURCE_DIR}/src/io/FbxImporter.cpp
     ${CMAKE_SOURCE_DIR}/src/io/FbxImportValidation.cpp
     ${CMAKE_SOURCE_DIR}/src/io/FbxSceneBuilder.cpp
-    ${CMAKE_SOURCE_DIR}/src/logging/LogCategories.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/logging/LogCategories.cpp
     ${CMAKE_SOURCE_DIR}/src/viewport/EditorCamera.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/interaction/ViewportInteractionMath.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/interaction/gizmo/TranslateGizmoInteraction.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/interaction/gizmo/RotateGizmoInteraction.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/interaction/gizmo/ScaleGizmoInteraction.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/gizmo/drag/TranslateGizmoDrag.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/gizmo/drag/RotateGizmoDrag.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/gizmo/drag/ScaleGizmoDrag.cpp
+    ${CMAKE_SOURCE_DIR}/src/viewport/runtime/ViewportRenderSync.cpp
+    ${CMAKE_SOURCE_DIR}/src/rendering/geometry/ViewportOverlayGeometryBuilder.cpp
+    ${CMAKE_SOURCE_DIR}/src/rendering/geometry/gizmo/TranslateGizmoGeometry.cpp
+    ${CMAKE_SOURCE_DIR}/src/rendering/geometry/gizmo/RotateGizmoGeometry.cpp
+    ${CMAKE_SOURCE_DIR}/src/rendering/geometry/gizmo/ScaleGizmoGeometry.cpp
+    ${CMAKE_SOURCE_DIR}/src/rendering/scene/ViewportRenderSceneAdapter.cpp
     ${CMAKE_SOURCE_DIR}/src/rendering/ShaderUtils.cpp
     ${CMAKE_SOURCE_DIR}/src/rendering/ViewportRenderer.cpp
 )

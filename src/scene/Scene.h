@@ -2,9 +2,11 @@
 
 #include <QHash>
 #include <QMatrix4x4>
+#include <QQuaternion>
 #include <QString>
 #include <QVector>
 
+#include "animation/scene/SceneAnimationState.h"
 #include "scene/Bounds3D.h"
 #include "scene/MeshData.h"
 #include "scene/SceneObject.h"
@@ -34,10 +36,14 @@ public:
     int currentFrame() const;
     void setCurrentFrame(int frame);
     bool setLocalTransform(SceneObject::Id id, const Transform& transform, bool autoKeyEnabled = false);
+    bool setLocalTransformInteractive(SceneObject::Id id, const Transform& transform, bool autoKeyEnabled = false);
     bool setObjectKeyframe(SceneObject::Id id, int frame);
     bool removeObjectKeyframe(SceneObject::Id id, int frame);
+    bool removeObjectKeyframesInRange(SceneObject::Id id, int startFrame, int endFrame);
     bool duplicateObjectKeyframe(SceneObject::Id id, int sourceFrame, int targetFrame);
     bool offsetObjectKeyframes(SceneObject::Id id, int frameDelta);
+    bool offsetObjectKeyframesInRange(SceneObject::Id id, int startFrame, int endFrame, int frameDelta);
+    bool scaleAllObjectKeyframes(double scaleFactor);
     int nextObjectKeyframe(SceneObject::Id id, int frame) const;
     int previousObjectKeyframe(SceneObject::Id id, int frame) const;
     bool setObjectVisible(SceneObject::Id id, bool visible);
@@ -65,8 +71,6 @@ public:
 private:
     Transform composeObjectLocalTransform(const SceneObject& object, const Transform& baseTransform) const;
     bool isDescendantOf(SceneObject::Id id, SceneObject::Id potentialAncestorId) const;
-    Transform evaluateObjectTransformAtFrame(const SceneObject& object, int frame) const;
-    QVector<SceneObject::Id> collectJointSubtree(SceneObject::Id rootJointId) const;
     SceneObject::Id duplicateSubtreeRecursive(const Scene& sourceScene, SceneObject::Id sourceId, SceneObject::Id newParentId);
     void removeObjectRecursive(SceneObject::Id id);
     void rebuildWorldDataForObject(SceneObject::Id objectId, const QMatrix4x4& parentWorldMatrix);
@@ -76,5 +80,5 @@ private:
     QHash<SceneObject::Id, SceneObject> objects_;
     QHash<int, MeshData> meshes_;
     Bounds3D sceneBounds_;
-    int currentFrame_ = 0;
+    SceneAnimationState animationState_;
 };

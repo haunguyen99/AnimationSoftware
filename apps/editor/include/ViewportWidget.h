@@ -4,19 +4,23 @@
 #include <QOpenGLWidget>
 #include <QPoint>
 #include <QString>
+#include <QElapsedTimer>
 
 #include <functional>
 
-#include "EditorViewportSceneController.h"
+#include "engine/runtime/EditorViewportSceneController.h"
 #include "io/FbxImporter.h"
 #include "rendering/ViewportRenderer.h"
 #include "scene/PrimitiveMeshFactory.h"
 #include "scene/Scene.h"
 #include "viewport/EditorCamera.h"
+#include "viewport/gizmo/GizmoTypes.h"
 
 class ViewportWidget : public QOpenGLWidget, protected QOpenGLFunctions_3_3_Core
 {
 public:
+    using GizmoHandle = ::GizmoHandle;
+
     enum class TransformMode
     {
         Translate,
@@ -93,34 +97,36 @@ protected:
     void wheelEvent(QWheelEvent* event) override;
 
 private:
-    enum class GizmoAxis
-    {
-        None = -1,
-        X = 0,
-        Y = 1,
-        Z = 2
-    };
-
     struct DragState
     {
         bool active = false;
         bool historyCaptured = false;
         QPoint startMousePosition;
+        QPointF startScreenVector;
         Transform startTransform;
         QVector3D gizmoOrigin;
         float gizmoSize = 1.0f;
-        GizmoAxis axis = GizmoAxis::None;
+        GizmoHandle handle = GizmoHandle::None;
+        QVector3D dragPlaneOrigin;
+        QVector3D dragPlaneNormal;
+        QVector3D dragStartWorldPoint;
+        QMatrix4x4 previewStartWorldMatrix;
     };
 
     void syncRendererSelection();
     void syncSceneToRenderer();
+    void syncSceneToRendererExcludingSelection();
     void applyRendererSelectionState();
+    void beginInteractivePreview();
+    void updateInteractivePreview();
+    void endInteractivePreview();
     void updateSelectedObject(SceneObject::Id objectId);
     SceneObject::Id pickObjectAtScreenPos(const QPoint& position) const;
-    GizmoAxis pickGizmoAxisAtScreenPos(const QPoint& position) const;
-    QPointF projectWorldToScreen(const QVector3D& worldPosition) const;
+    GizmoHandle pickGizmoHandleAtScreenPos(const QPoint& position) const;
     QVector<QVector3D> gizmoAxesWorld() const;
-    QVector3D gizmoAxisDirectionWorld(GizmoAxis axis) const;
+    QVector3D gizmoAxisDirectionWorld(GizmoHandle handle) const;
+    QVector3D gizmoPlaneNormalWorld(GizmoHandle handle) const;
+    bool gizmoHandleUsesPlaneDrag(GizmoHandle handle) const;
     QMatrix4x4 parentWorldTransform() const;
     QVector3D selectedObjectWorldOrigin() const;
     QString cameraViewLabelText() const;
@@ -153,4 +159,6 @@ private:
     std::function<void()> beforeSceneMutationCallback_;
     bool autoKeyEnabled_ = false;
     bool suppressBeforeSceneMutationCallback_ = false;
+    QElapsedTimer dragRenderSyncTimer_;
+    bool interactivePreviewActive_ = false;
 };
