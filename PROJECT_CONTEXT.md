@@ -1,7 +1,7 @@
 # PROJECT_CONTEXT.md
 
 Tài liệu này tổng hợp từ đọc trực tiếp mã nguồn — không phải tài liệu.  
-Cập nhật: 2026-08-11.
+Cập nhật: 2026-08-11 (phiên 2).
 
 ---
 
@@ -290,6 +290,33 @@ Tên test nói lên rõ scope:
 - `timelineUiSupportsFrameRangeSelection`
 
 Build: `tests/unit/CMakeLists.txt` → target `editor_ui_tests`.
+
+---
+
+## Kế hoạch tiếp theo — Graph Editor (đã lên plan, chưa implement)
+
+**Trạng thái hiện tại**: `GraphEditorPanel` (603 dòng) là viewer read-only — curves vẽ linear, không edit được key, không có bezier/tangent.
+
+**4 Phase đã plan** (`plans/flickering-waddling-lighthouse.md`):
+
+| Phase | Nội dung | Ước tính |
+|---|---|---|
+| 1 — Data | `KeyTangent.h`, `CurveInterpolator.h/.cpp`, thêm tangent vào `TransformKeyframe`, thay linear lerp trong `SceneAnimationState` | ~2h |
+| 2 — Key Editing | Drag key trên canvas → write-back scene (undo-able), `GraphEditorKeyEdit` callback | ~3h |
+| 3 — Bezier UI | `cubicTo()` draw, tangent handle drag, populate tangents từ viewmodel | ~4h |
+| 4 — Polish | Context menu (Auto/Linear/Flat/Stepped/Broken), toolbar (Frame All/Selected), 5 test methods | ~2h |
+
+**Files sẽ tạo mới**:
+- `src/animation/data/KeyTangent.h`
+- `src/animation/data/CurveInterpolator.h/.cpp`
+
+**Files sẽ sửa**:
+- `src/animation/data/TransformKeyframeTrack.h` — thêm `KeyTangent tangent`
+- `src/animation/scene/SceneAnimationState.cpp` — dùng CurveInterpolator
+- `apps/editor/include/GraphEditorPanel.h` — tangent fields, callbacks, drag state
+- `apps/editor/src/GraphEditorPanel.cpp` — bezier draw, key drag, tangent handle
+- `src/core/app/EditorShell.h/.cpp` — handlers + wire callbacks
+- `apps/editor/CMakeLists.txt` — thêm CurveInterpolator.cpp
 
 ---
 
