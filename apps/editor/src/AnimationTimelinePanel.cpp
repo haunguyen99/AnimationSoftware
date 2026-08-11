@@ -112,6 +112,31 @@ AnimationTimelinePanel::AnimationTimelinePanel(QWidget* parent)
     sliderRow->addLayout(controlsRow);
     rootLayout->addWidget(sliderRowHost);
 
+    // Status row: timeline status text + set/delete key quick-access buttons
+    QWidget* statusRowHost = new QWidget(this);
+    QHBoxLayout* statusRow = new QHBoxLayout(statusRowHost);
+    statusRow->setContentsMargins(0, 1, 0, 0);
+    statusRow->setSpacing(4);
+
+    timelineStatusLabel_ = new QLabel(statusRowHost);
+    timelineStatusLabel_->setObjectName("timelineStatusLabel");
+    timelineStatusLabel_->setProperty("statusTone", "muted");
+    statusRow->addWidget(timelineStatusLabel_, 1);
+
+    setKeyButton_ = new QPushButton("Key Selected", statusRowHost);
+    setKeyButton_->setObjectName("setKeyButton");
+    setKeyButton_->setEnabled(false);
+    setKeyButton_->setFixedHeight(22);
+    statusRow->addWidget(setKeyButton_);
+
+    deleteKeyButton_ = new QPushButton("Delete Key", statusRowHost);
+    deleteKeyButton_->setObjectName("deleteKeyButton");
+    deleteKeyButton_->setEnabled(false);
+    deleteKeyButton_->setFixedHeight(22);
+    statusRow->addWidget(deleteKeyButton_);
+
+    rootLayout->addWidget(statusRowHost);
+
     timelineContextMenu_ = new QMenu(this);
     contextSetKeyAction_ = timelineContextMenu_->addAction("Key Selected");
     contextDeleteKeyAction_ = timelineContextMenu_->addAction("Delete Key");
@@ -173,6 +198,16 @@ AnimationTimelinePanel::AnimationTimelinePanel(QWidget* parent)
             shiftKeysRightCallback_();
         }
     });
+    QObject::connect(setKeyButton_, &QPushButton::clicked, this, [this]() {
+        if (setKeyCallback_) {
+            setKeyCallback_();
+        }
+    });
+    QObject::connect(deleteKeyButton_, &QPushButton::clicked, this, [this]() {
+        if (deleteKeyCallback_) {
+            deleteKeyCallback_();
+        }
+    });
 }
 
 void AnimationTimelinePanel::bindTimelineActions(
@@ -213,6 +248,16 @@ void AnimationTimelinePanel::setViewModel(const EditorAnimationTimelineViewModel
     previousKeyButton_->setEnabled(viewModel.hasSelection && viewModel.hasAnyKeys);
     nextKeyButton_->setEnabled(viewModel.hasSelection && viewModel.hasAnyKeys);
     playPauseButton_->setText(viewModel.playPauseText);
+
+    setKeyButton_->setEnabled(viewModel.hasSelection);
+    setKeyButton_->setStyleSheet(viewModel.setKeyStyle);
+    deleteKeyButton_->setEnabled(viewModel.hasSelection && viewModel.currentFrameKeyed);
+    deleteKeyButton_->setStyleSheet(viewModel.deleteKeyStyle);
+    duplicateKeyButton_->setEnabled(viewModel.hasSelection && viewModel.currentFrameKeyed);
+
+    timelineStatusLabel_->setText(viewModel.statusText);
+    timelineStatusLabel_->setStyleSheet(viewModel.statusStyle);
+    refreshStyle(timelineStatusLabel_);
 
     syncActionState(viewModel);
 }

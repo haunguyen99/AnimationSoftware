@@ -5,6 +5,8 @@
 #include <QDockWidget>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QCheckBox>
 #include <QDateTime>
 #include <QDoubleSpinBox>
@@ -51,6 +53,10 @@
 #include "GraphEditorPanel.h"
 #include "RangeSliderPanel.h"
 #include "core/app/EditorShellContexts.h"
+#include "core/app/EditorMenuBar.h"
+#include "core/app/EditorTheme.h"
+#include "core/app/EditorToolBar.h"
+#include "core/app/WorkspaceManager.h"
 #include "ViewportWorkspaceWidget.h"
 #include "core/settings/EditorPreferences.h"
 #include "io/PhoenixSceneDocument.h"
@@ -63,79 +69,6 @@ namespace
 {
 constexpr auto kPrimitiveTypeRole = Qt::UserRole + 101;
 using EditorSceneQueryController::objectDisplayName;
-
-QString editorShellStyleSheet()
-{
-    return
-        "QMainWindow { background: #25282d; color: #d8dde6; }"
-        "QWidget { color: #d8dde6; font-size: 12px; }"
-        "QMenuBar { background: #2c3035; color: #e6ebf2; border-bottom: 1px solid #3a4047; }"
-        "QMenuBar::item { background: transparent; padding: 7px 12px; }"
-        "QMenuBar::item:selected { background: #3a4048; }"
-        "QMenu { background: #2b2f34; color: #e6ebf2; border: 1px solid #434952; padding: 4px 0; }"
-        "QMenu::item { padding: 6px 20px; }"
-        "QMenu::separator { height: 1px; background: #3c424a; margin: 4px 8px; }"
-        "QMenu::item:selected { background: #4e667a; }"
-        "QToolBar { background: #2b2f34; border: none; spacing: 4px; padding: 5px; }"
-        "QToolBar::separator { background: #3e444c; width: 1px; margin: 4px 6px; }"
-        "QToolButton { background: #393f46; color: #dbe1ea; border: 1px solid #4c525b; border-radius: 4px; padding: 4px 8px; }"
-        "QToolButton:hover { background: #444b54; }"
-        "QToolButton:checked { background: #4f6b82; border-color: #6d8aa3; }"
-        "QStatusBar { background: #2a2e33; color: #c6ccd6; border-top: 1px solid #3a4047; }"
-        "QLabel#activePanelStatusLabel { color: #9fb8cf; font-weight: 600; padding: 0 8px; }"
-        "QDockWidget { background: #262a2f; }"
-        "QDockWidget::title { background: #32363d; color: #eef2f7; padding: 7px 10px; border-bottom: 1px solid #434952; }"
-        "QDockWidget[activePanel=\"true\"]::title { background: #455766; color: #f4f7fb; border-bottom: 1px solid #6d8aa3; }"
-        "QDockWidget::close-button, QDockWidget::float-button { background: transparent; border: none; padding: 2px; }"
-        "QDockWidget::close-button:hover, QDockWidget::float-button:hover { background: #414750; border-radius: 3px; }"
-        "QWidget[panelSurface=\"true\"] { border: 1px solid #2d3137; }"
-        "QWidget[panelSurface=\"true\"][activePanel=\"true\"] { border: 1px solid #6d8aa3; }"
-        "QTreeWidget, QListWidget, QPlainTextEdit { background: #23272c; color: #dde3ec; border: 1px solid #3f454d; }"
-        "QHeaderView::section { background: #2f3338; color: #c9d0da; border: none; border-bottom: 1px solid #3f454d; padding: 6px 8px; }"
-        "QAbstractItemView::item { padding: 4px 6px; }"
-        "QAbstractItemView::item:selected { background: #536c82; color: #f3f6fa; }"
-        "QAbstractItemView::item:hover { background: #343a42; }"
-        "QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox { background: #30353b; color: #eef2f7; border: 1px solid #4a5058; border-radius: 4px; padding: 4px 6px; }"
-        "QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus { border-color: #6d8aa3; }"
-        "QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled { background: #2a2e33; color: #7c848f; border-color: #3c4047; }"
-        "QPushButton { background: #393f46; color: #e7ebf1; border: 1px solid #4c525b; border-radius: 4px; padding: 4px 10px; }"
-        "QPushButton:hover { background: #444b53; }"
-        "QPushButton:pressed { background: #2f3338; }"
-        "QPushButton:disabled { background: #2b2f34; color: #7a818c; border-color: #3b4047; }"
-        "QPushButton[variant=\"transport\"] { background: transparent; color: #cfd5dd; border: none; padding: 0px; }"
-        "QPushButton[variant=\"transport\"]:hover { background: #3a4048; border-radius: 3px; color: #f4f7fb; }"
-        "QPushButton[variant=\"transport\"]:pressed { background: #31363d; }"
-        "QPushButton[tone=\"warning\"] { background: #8f6832; color: #f5f7fa; border-color: #ab8144; font-weight: 600; }"
-        "QPushButton[tone=\"danger\"] { background: #6d3a3a; color: #f5f7fa; border-color: #8b4d4d; font-weight: 600; }"
-        "QPushButton[tone=\"muted\"] { background: #4b5058; color: #f5f7fa; border-color: #5c636d; }"
-        "QCheckBox { spacing: 6px; }"
-        "QWidget#channelBoxPanel { background: #262a2f; }"
-        "QLabel#inspectorEmptyStateLabel { color: #97a1ae; padding: 0 0 4px 0; }"
-        "QLabel#channelObjectNameLabel { font-weight: 600; padding-bottom: 4px; color: #eef2f7; }"
-        "QWidget#channelBoxSection { background: #2b2f34; border: 1px solid #3b4149; border-radius: 4px; }"
-        "QLabel#channelSectionLabel { color: #c8ced7; font-size: 11px; font-weight: 600; padding: 0 0 2px 0; }"
-        "QLabel#channelRowLabel { color: #9fa7b2; }"
-        "QLabel#timelineStatusLabel[statusTone=\"muted\"] { color: #aeb6c1; }"
-        "QLabel#timelineStatusLabel[statusTone=\"warning\"] { color: #d6b06e; font-weight: 600; }"
-        "QLabel#timelineStatusLabel[statusTone=\"info\"] { color: #8eb3cf; }"
-        "QWidget#commandLinePanel { background: #23272c; border-top: 1px solid #3a4047; }"
-        "QLabel#commandLinePrefixLabel { color: #9ea7b2; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; }"
-        "QLabel#commandLineStatusLabel[statusTone=\"muted\"] { color: #aeb6c1; }"
-        "QLabel#commandLineStatusLabel[statusTone=\"warning\"] { color: #d6b06e; font-weight: 600; }"
-        "QLabel#commandLineStatusLabel[statusTone=\"info\"] { color: #8eb3cf; }"
-        "QSpinBox[variant=\"frameBox\"] { background: #2f3338; color: #f0f3f8; border: 1px solid #4b515a; padding: 2px 6px; }"
-        "QDoubleSpinBox[variant=\"channelBox\"] { background: #343941; color: #eef2f7; border: 1px solid #4a515a; border-radius: 3px; padding: 3px 6px; }"
-        "QDoubleSpinBox[variant=\"channelBox\"]:focus { border-color: #6d8aa3; }"
-        "QDoubleSpinBox[variant=\"channelBox\"]:disabled { background: #2a2e33; color: #7c848f; border-color: #3c4047; }"
-        "QCheckBox[variant=\"channelVisibility\"] { color: #d8dde6; }"
-        "QLabel[variant=\"channelMeta\"] { color: #9ea7b2; }"
-        "QScrollBar:vertical { background: #272b30; width: 12px; margin: 0; }"
-        "QScrollBar::handle:vertical { background: #4a515a; min-height: 24px; border-radius: 5px; }"
-        "QScrollBar:horizontal { background: #272b30; height: 12px; margin: 0; }"
-        "QScrollBar::handle:horizontal { background: #4a515a; min-width: 24px; border-radius: 5px; }"
-        "QSplitter::handle { background: #2b2f34; }"
-        "QSplitter::handle:hover { background: #3a4048; }";
-}
 
 QLabel* createChannelRowLabel(const QString& text, QWidget* parent)
 {
@@ -194,114 +127,13 @@ QDoubleSpinBox* createChannelSpinBox(QWidget* parent)
     return spinBox;
 }
 
-QAction* configureAction(
-    QAction* action,
-    const char* objectName = nullptr,
-    bool enabled = true,
-    bool checkable = false,
-    const QKeySequence& shortcut = QKeySequence())
-{
-    if (action == nullptr) {
-        return nullptr;
-    }
-
-    if (objectName != nullptr) {
-        action->setObjectName(QString::fromUtf8(objectName));
-    }
-    action->setEnabled(enabled);
-    action->setCheckable(checkable);
-    if (!shortcut.isEmpty()) {
-        action->setShortcut(shortcut);
-    }
-    return action;
-}
-
-void configureDockWidget(
-    QDockWidget* dock,
-    const char* objectName,
-    Qt::DockWidgetAreas allowedAreas,
-    QDockWidget::DockWidgetFeatures features)
-{
-    if (dock == nullptr) {
-        return;
-    }
-
-    dock->setObjectName(QString::fromUtf8(objectName));
-    dock->setAllowedAreas(allowedAreas);
-    dock->setFeatures(features);
-}
-
-void hideDockTitleBar(QDockWidget* dock)
-{
-    if (dock == nullptr) {
-        return;
-    }
-
-    QWidget* titleBar = new QWidget(dock);
-    titleBar->setFixedHeight(0);
-    titleBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    dock->setTitleBarWidget(titleBar);
-}
-
-QWidget* createFloatingDockTitleBar(QDockWidget* dock)
-{
-    if (dock == nullptr) {
-        return nullptr;
-    }
-
-    QWidget* titleBar = new QWidget(dock);
-    titleBar->setObjectName("floatingDockTitleBar");
-    titleBar->setFixedHeight(26);
-
-    QHBoxLayout* layout = new QHBoxLayout(titleBar);
-    layout->setContentsMargins(8, 3, 8, 3);
-    layout->setSpacing(6);
-
-    QLabel* label = new QLabel(dock->windowTitle(), titleBar);
-    label->setStyleSheet("color: #eef2f7; font-weight: 600;");
-    layout->addWidget(label, 1);
-
-    return titleBar;
-}
-
-void updateDockTitleBarForFloatingState(QDockWidget* dock)
-{
-    if (dock == nullptr) {
-        return;
-    }
-
-    if (dock->isFloating()) {
-        dock->setTitleBarWidget(createFloatingDockTitleBar(dock));
-        return;
-    }
-
-    hideDockTitleBar(dock);
-}
-
-void bindCompactDockTitleBehavior(QDockWidget* dock)
-{
-    if (dock == nullptr) {
-        return;
-    }
-
-    updateDockTitleBarForFloatingState(dock);
-    QObject::connect(dock, &QDockWidget::topLevelChanged, dock, [dock](bool floating) {
-        updateDockTitleBarForFloatingState(dock);
-        if (!floating) {
-            if (auto* shell = static_cast<EditorShell*>(dock->parentWidget())) {
-                shell->restoreBottomPanelLayout();
-            }
-        }
-    });
-}
-
 }
 
 EditorShell::EditorShell()
 {
     setWindowTitle("Phoenix Editor Beta");
     resize(1440, 820);
-    applyUnifiedTheme();
+    EditorTheme::apply(this);
     setDockNestingEnabled(true);
     setDockOptions(QMainWindow::AllowNestedDocks
         | QMainWindow::AllowTabbedDocks
@@ -340,7 +172,76 @@ EditorShell::EditorShell()
         }
     });
 
-    createMenus();
+    workspaceManager_ = new WorkspaceManager(this, this);
+
+    editorMenuBar_ = new EditorMenuBar(this, this);
+    editorMenuBar_->build(EditorMenuBar::Bindings {
+        // File
+        .newScene                   = [this]() { newScene(); },
+        .openScene                  = [this]() { openScene(); },
+        .saveScene                  = [this]() { saveScene(); },
+        .saveSceneAs                = [this]() { saveSceneAs(); },
+        .incrementAndSave           = [this]() { incrementAndSave(); },
+        .archiveScene               = [this]() { archiveScene(); },
+        .savePreferences            = [this]() { savePreferences(); },
+        .optimizeSceneSize          = [this]() { optimizeSceneStorage(); },
+        .importFbx                  = [this]() { importFbx(); },
+        .exportAll                  = [this]() { exportAll(); },
+        .exportSelection            = [this]() { exportSelection(); },
+        // Edit
+        .undo                       = [this]() { undoLastChange(); },
+        .redo                       = [this]() { redoLastChange(); },
+        // Create
+        .showPolygonPrimitives      = [this]() { showPolygonPrimitivesWindow(); },
+        .createJoint                = [this]() { createJoint(); },
+        // Rig
+        .markHierarchyParent        = [this]() { markSelectionAsHierarchyParent(); },
+        .parentToMarkedParent       = [this]() { parentSelectionToMarkedParent(); },
+        .unparentSelected           = [this]() { unparentSelection(); },
+        .bindSkin                   = [this]() { bindSelectedMeshToMarkedJoint(); },
+        .resetJointOrientation      = [this]() { resetSelectedJointOrientation(); },
+        .alignJointOrientation      = [this]() { alignSelectedJointOrientationToChild(); },
+        .captureBindPose            = [this]() { captureSelectedBindPose(); },
+        .captureBindPoseRecursive   = [this]() { captureSelectedBindPoseRecursive(); },
+        // Animation
+        .duplicateKey               = [this]() { duplicateCurrentKeyForSelection(true); },
+        .shiftKeysLeft              = [this]() { shiftSelectedObjectKeyframes(-1, true); },
+        .shiftKeysRight             = [this]() { shiftSelectedObjectKeyframes(1, true); },
+        .previousKey                = [this]() { jumpToSelectedObjectKeyframe(false, true); },
+        .nextKey                    = [this]() { jumpToSelectedObjectKeyframe(true, true); },
+        // View
+        .resetCamera                = [this]() { resetSceneCamera(); },
+        .frameScene                 = [this]() { frameEntireScene(); },
+        .frameSelected              = [this]() { frameSelectedObject(); },
+        .setWireframe               = [this](bool on) { setWireframeDisplayEnabled(on); },
+        .setAxisVisibility          = [this](bool on) { setAxisVisibilityEnabled(on); },
+        .setBackfaceCulling         = [this](bool on) { setBackfaceCullingEnabled(on); },
+        .setCameraPerspective       = [this]() { setViewCameraPreset(ViewCameraUiPreset::Perspective); },
+        .setCameraFront             = [this]() { setViewCameraPreset(ViewCameraUiPreset::Front); },
+        .setCameraBack              = [this]() { setViewCameraPreset(ViewCameraUiPreset::Back); },
+        .setCameraLeft              = [this]() { setViewCameraPreset(ViewCameraUiPreset::Left); },
+        .setCameraRight             = [this]() { setViewCameraPreset(ViewCameraUiPreset::Right); },
+        .setCameraTop               = [this]() { setViewCameraPreset(ViewCameraUiPreset::Top); },
+        .setCameraBottom            = [this]() { setViewCameraPreset(ViewCameraUiPreset::Bottom); },
+        .restoreDefaultLayout       = [this]() { restoreDefaultWorkspaceLayout(); },
+        // Transform
+        .setTranslate               = [this]() { setTransformUiMode(TransformUiMode::Translate); },
+        .setRotate                  = [this]() { setTransformUiMode(TransformUiMode::Rotate); },
+        .setScale                   = [this]() { setTransformUiMode(TransformUiMode::Scale); },
+        .setWorldAxis               = [this]() { setAxisUiOrientation(AxisUiOrientation::World); },
+        .setLocalAxis               = [this]() { setAxisUiOrientation(AxisUiOrientation::Local); },
+        // Windows
+        .showScriptEditor           = [this]() { showScriptEditorWindow(); },
+        .showGraphEditor            = [this]() { showGraphEditorWindow(); },
+        .workspaceManager           = workspaceManager_,
+        .saveWorkspaceLayout        = [this]() { workspaceManager_->saveUserLayout(QString()); },
+        .deleteWorkspaceLayout      = [this]() { workspaceManager_->deleteUserLayout(QString()); },
+        .userLayoutNames            = [this]() { return workspaceManager_->userLayoutNames(); },
+        .restoreUserLayout          = [this](const QString& name) { workspaceManager_->restoreUserLayout(name); },
+        .showStatusMessage          = [this](const QString& msg, int ms) { statusBar()->showMessage(msg, ms); },
+    });
+    toolbar_ = EditorToolBar::build(this, editorMenuBar_->actions());
+
     createDocks();
     activePanelStatusLabel_ = new QLabel(this);
     activePanelStatusLabel_->setObjectName("activePanelStatusLabel");
@@ -352,11 +253,6 @@ EditorShell::EditorShell()
     applyAnimationState(animationState_);
     refreshActivePanelVisuals();
     statusBar()->showMessage("Ready");
-}
-
-void EditorShell::applyUnifiedTheme()
-{
-    setStyleSheet(editorShellStyleSheet());
 }
 
 bool EditorShell::eventFilter(QObject* watched, QEvent* event)
@@ -497,6 +393,7 @@ void EditorShell::refreshActivePanelVisuals()
     applyDockState(graphEditorDock_, ActivePanel::GraphEditor);
     applyDockState(polygonPrimitivesDock_, ActivePanel::PrimitivePalette);
     applyDockState(scriptEditorDock_, ActivePanel::ScriptEditor);
+    applyDockState(rigPanelDock_, ActivePanel::RigPanel);
 
     if (activePanelStatusLabel_ != nullptr) {
         activePanelStatusLabel_->setText(QString("Active Panel: %1").arg(activePanelDisplayName(activePanel_)));
@@ -524,305 +421,12 @@ QString EditorShell::activePanelDisplayName(ActivePanel panel) const
         return "Polygon Primitives";
     case ActivePanel::ScriptEditor:
         return "Script Editor";
+    case ActivePanel::RigPanel:
+        return "Rig Panel";
     case ActivePanel::None:
     default:
         return "None";
     }
-}
-
-void EditorShell::createMenus()
-{
-    createEditMenu();
-    createFileMenu();
-    createCreateMenu();
-    createRigMenu();
-    createWindowsMenu();
-    createAnimationMenu();
-    createViewMenu();
-    createTransformMenu();
-}
-
-void EditorShell::createEditMenu()
-{
-    QMenu* editMenu = menuBar()->addMenu("&Edit");
-    undoAction_ = configureAction(editMenu->addAction("Undo"), "undoAction", true, false, QKeySequence::Undo);
-    QObject::connect(undoAction_, &QAction::triggered, this, &EditorShell::undoLastChange);
-
-    redoAction_ = configureAction(editMenu->addAction("Redo"), "redoAction", true, false, QKeySequence::Redo);
-    QObject::connect(redoAction_, &QAction::triggered, this, &EditorShell::redoLastChange);
-
-    editMenu->addSeparator();
-}
-
-void EditorShell::createFileMenu()
-{
-    QMenu* fileMenu = menuBar()->addMenu("&File");
-    newSceneAction_ = configureAction(fileMenu->addAction("New Scene"), nullptr, true, false, QKeySequence::New);
-    QObject::connect(newSceneAction_, &QAction::triggered, this, &EditorShell::newScene);
-
-    openSceneAction_ = configureAction(fileMenu->addAction("Open Scene..."), nullptr, true, false, QKeySequence::Open);
-    QObject::connect(openSceneAction_, &QAction::triggered, this, &EditorShell::openScene);
-
-    saveSceneAction_ = configureAction(fileMenu->addAction("Save Scene"), nullptr, true, false, QKeySequence::Save);
-    QObject::connect(saveSceneAction_, &QAction::triggered, this, &EditorShell::saveScene);
-
-    saveSceneAsAction_ = configureAction(fileMenu->addAction("Save Scene As..."), nullptr, true, false, QKeySequence::SaveAs);
-    QObject::connect(saveSceneAsAction_, &QAction::triggered, this, &EditorShell::saveSceneAs);
-
-    incrementAndSaveAction_ = configureAction(
-        fileMenu->addAction("Increment and Save"),
-        nullptr,
-        true,
-        false,
-        QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_S));
-    QObject::connect(incrementAndSaveAction_, &QAction::triggered, this, &EditorShell::incrementAndSave);
-
-    archiveSceneAction_ = fileMenu->addAction("Archive Scene");
-    QObject::connect(archiveSceneAction_, &QAction::triggered, this, &EditorShell::archiveScene);
-
-    savePreferencesAction_ = fileMenu->addAction("Save Preferences");
-    QObject::connect(savePreferencesAction_, &QAction::triggered, this, &EditorShell::savePreferences);
-
-    optimizeSceneSizeAction_ = fileMenu->addAction("Optimize Scene Size");
-    QObject::connect(optimizeSceneSizeAction_, &QAction::triggered, this, &EditorShell::optimizeSceneStorage);
-
-    fileMenu->addSection("Import/Export");
-    importFbxAction_ = configureAction(fileMenu->addAction("Import..."), "importFbxAction");
-    QObject::connect(importFbxAction_, &QAction::triggered, this, &EditorShell::importFbx);
-
-    exportAllAction_ = fileMenu->addAction("Export All...");
-    QObject::connect(exportAllAction_, &QAction::triggered, this, &EditorShell::exportAll);
-
-    exportSelectionAction_ = fileMenu->addAction("Export Selection...");
-    QObject::connect(exportSelectionAction_, &QAction::triggered, this, &EditorShell::exportSelection);
-}
-
-void EditorShell::createCreateMenu()
-{
-    QMenu* createMenu = menuBar()->addMenu("&Create");
-    polygonPrimitivesAction_ = configureAction(createMenu->addAction("Polygon Primitives"), "polygonPrimitivesAction");
-    QObject::connect(polygonPrimitivesAction_, &QAction::triggered, this, &EditorShell::showPolygonPrimitivesWindow);
-    createJointAction_ = configureAction(createMenu->addAction("Joint"), "createJointAction");
-    QObject::connect(createJointAction_, &QAction::triggered, this, &EditorShell::createJoint);
-}
-
-void EditorShell::createRigMenu()
-{
-    QMenu* rigMenu = menuBar()->addMenu("&Rig");
-    markHierarchyParentAction_ = configureAction(
-        rigMenu->addAction("Mark Selected As Parent"),
-        "markHierarchyParentAction",
-        false);
-    QObject::connect(markHierarchyParentAction_, &QAction::triggered, this, &EditorShell::markSelectionAsHierarchyParent);
-
-    parentToMarkedParentAction_ = configureAction(
-        rigMenu->addAction("Parent Selected To Marked Parent"),
-        "parentToMarkedParentAction",
-        false,
-        false,
-        QKeySequence(Qt::Key_P));
-    QObject::connect(parentToMarkedParentAction_, &QAction::triggered, this, &EditorShell::parentSelectionToMarkedParent);
-
-    unparentSelectedAction_ = configureAction(
-        rigMenu->addAction("Unparent Selected"),
-        "unparentSelectedAction",
-        false,
-        false,
-        QKeySequence(Qt::SHIFT | Qt::Key_P));
-    QObject::connect(unparentSelectedAction_, &QAction::triggered, this, &EditorShell::unparentSelection);
-
-    bindSkinAction_ = configureAction(rigMenu->addAction("Bind Selected Mesh To Marked Joint"), "bindSkinAction", false);
-    QObject::connect(bindSkinAction_, &QAction::triggered, this, &EditorShell::bindSelectedMeshToMarkedJoint);
-
-    rigMenu->addSeparator();
-    resetJointOrientationAction_ = configureAction(
-        rigMenu->addAction("Reset Joint Orientation"),
-        "resetJointOrientationAction",
-        false);
-    QObject::connect(resetJointOrientationAction_, &QAction::triggered, this, &EditorShell::resetSelectedJointOrientation);
-
-    alignJointOrientationAction_ = configureAction(
-        rigMenu->addAction("Align Joint Orientation To Child"),
-        "alignJointOrientationAction",
-        false);
-    QObject::connect(alignJointOrientationAction_, &QAction::triggered, this, &EditorShell::alignSelectedJointOrientationToChild);
-
-    captureBindPoseAction_ = configureAction(rigMenu->addAction("Capture Bind Pose"), "captureBindPoseAction", false);
-    QObject::connect(captureBindPoseAction_, &QAction::triggered, this, &EditorShell::captureSelectedBindPose);
-
-    captureBindPoseRecursiveAction_ = configureAction(
-        rigMenu->addAction("Capture Bind Pose Recursive"),
-        "captureBindPoseRecursiveAction",
-        false);
-    QObject::connect(captureBindPoseRecursiveAction_, &QAction::triggered, this, &EditorShell::captureSelectedBindPoseRecursive);
-}
-
-void EditorShell::createWindowsMenu()
-{
-    QMenu* windowsMenu = menuBar()->addMenu("&Windows");
-    scriptEditorAction_ = configureAction(windowsMenu->addAction("Script Editor"), "scriptEditorAction");
-    QObject::connect(scriptEditorAction_, &QAction::triggered, this, &EditorShell::showScriptEditorWindow);
-    graphEditorAction_ = configureAction(windowsMenu->addAction("Graph Editor"), "graphEditorAction");
-    QObject::connect(graphEditorAction_, &QAction::triggered, this, &EditorShell::showGraphEditorWindow);
-}
-
-void EditorShell::createAnimationMenu()
-{
-    QMenu* animationMenu = menuBar()->addMenu("&Animation");
-    duplicateKeyAction_ = configureAction(
-        animationMenu->addAction("Duplicate Current Key"),
-        "duplicateKeyAction",
-        false,
-        false,
-        QKeySequence(Qt::CTRL | Qt::Key_D));
-    QObject::connect(duplicateKeyAction_, &QAction::triggered, this, [this]() { duplicateCurrentKeyForSelection(true); });
-
-    shiftKeysLeftAction_ = configureAction(animationMenu->addAction("Shift Keys Left"), "shiftKeysLeftAction", false);
-    QObject::connect(shiftKeysLeftAction_, &QAction::triggered, this, [this]() { shiftSelectedObjectKeyframes(-1, true); });
-
-    shiftKeysRightAction_ = configureAction(animationMenu->addAction("Shift Keys Right"), "shiftKeysRightAction", false);
-    QObject::connect(shiftKeysRightAction_, &QAction::triggered, this, [this]() { shiftSelectedObjectKeyframes(1, true); });
-
-    animationMenu->addSeparator();
-    previousKeyAction_ = configureAction(
-        animationMenu->addAction("Previous Key"),
-        "previousKeyAction",
-        false,
-        false,
-        QKeySequence(Qt::Key_Comma));
-    QObject::connect(previousKeyAction_, &QAction::triggered, this, [this]() { jumpToSelectedObjectKeyframe(false, true); });
-
-    nextKeyAction_ = configureAction(
-        animationMenu->addAction("Next Key"),
-        "nextKeyAction",
-        false,
-        false,
-        QKeySequence(Qt::Key_Period));
-    QObject::connect(nextKeyAction_, &QAction::triggered, this, [this]() { jumpToSelectedObjectKeyframe(true, true); });
-}
-
-void EditorShell::createViewMenu()
-{
-    QMenu* viewMenu = menuBar()->addMenu("&View");
-
-    resetCameraAction_ = viewMenu->addAction("Reset Camera");
-    QObject::connect(resetCameraAction_, &QAction::triggered, this, &EditorShell::resetSceneCamera);
-
-    frameSceneAction_ = viewMenu->addAction("Frame Scene");
-    QObject::connect(frameSceneAction_, &QAction::triggered, this, &EditorShell::frameEntireScene);
-
-    frameSelectedAction_ = configureAction(viewMenu->addAction("Frame Selected"), nullptr, false);
-    QObject::connect(frameSelectedAction_, &QAction::triggered, this, &EditorShell::frameSelectedObject);
-
-    viewMenu->addSeparator();
-    QMenu* camerasMenu = viewMenu->addMenu("Cameras");
-    perspectiveCameraAction_ = configureAction(camerasMenu->addAction("Perspective"), "perspectiveCameraAction", true, true);
-    frontCameraAction_ = configureAction(camerasMenu->addAction("Front"), "frontCameraAction", true, true);
-    backCameraAction_ = configureAction(camerasMenu->addAction("Back"), "backCameraAction", true, true);
-    leftCameraAction_ = configureAction(camerasMenu->addAction("Left"), "leftCameraAction", true, true);
-    rightCameraAction_ = configureAction(camerasMenu->addAction("Right"), "rightCameraAction", true, true);
-    topCameraAction_ = configureAction(camerasMenu->addAction("Top"), "topCameraAction", true, true);
-    bottomCameraAction_ = configureAction(camerasMenu->addAction("Bottom"), "bottomCameraAction", true, true);
-
-    QObject::connect(perspectiveCameraAction_, &QAction::triggered, this, [this]() { setViewCameraPreset(ViewCameraUiPreset::Perspective); });
-    QObject::connect(frontCameraAction_, &QAction::triggered, this, [this]() { setViewCameraPreset(ViewCameraUiPreset::Front); });
-    QObject::connect(backCameraAction_, &QAction::triggered, this, [this]() { setViewCameraPreset(ViewCameraUiPreset::Back); });
-    QObject::connect(leftCameraAction_, &QAction::triggered, this, [this]() { setViewCameraPreset(ViewCameraUiPreset::Left); });
-    QObject::connect(rightCameraAction_, &QAction::triggered, this, [this]() { setViewCameraPreset(ViewCameraUiPreset::Right); });
-    QObject::connect(topCameraAction_, &QAction::triggered, this, [this]() { setViewCameraPreset(ViewCameraUiPreset::Top); });
-    QObject::connect(bottomCameraAction_, &QAction::triggered, this, [this]() { setViewCameraPreset(ViewCameraUiPreset::Bottom); });
-    setViewCameraPreset(ViewCameraUiPreset::Perspective);
-
-    wireframeAction_ = configureAction(viewMenu->addAction("Wireframe"), nullptr, true, true);
-    QObject::connect(wireframeAction_, &QAction::toggled, this, &EditorShell::setWireframeDisplayEnabled);
-
-    showAxisAction_ = configureAction(viewMenu->addAction("Show Axis"), nullptr, true, true);
-    showAxisAction_->setChecked(true);
-    QObject::connect(showAxisAction_, &QAction::toggled, this, &EditorShell::setAxisVisibilityEnabled);
-
-    backfaceCullingAction_ = configureAction(viewMenu->addAction("Backface Culling"), nullptr, true, true);
-    QObject::connect(backfaceCullingAction_, &QAction::toggled, this, &EditorShell::setBackfaceCullingEnabled);
-
-    viewMenu->addSeparator();
-    restoreWorkspaceLayoutAction_ = configureAction(
-        viewMenu->addAction("Restore Default Layout"),
-        "restoreWorkspaceLayoutAction");
-    QObject::connect(restoreWorkspaceLayoutAction_, &QAction::triggered, this, &EditorShell::restoreDefaultWorkspaceLayout);
-}
-
-void EditorShell::createTransformMenu()
-{
-    QMenu* transformMenu = menuBar()->addMenu("&Transform");
-    translateAction_ = configureAction(transformMenu->addAction("Translate"), "translateAction", true, true, QKeySequence(Qt::Key_W));
-    rotateAction_ = configureAction(transformMenu->addAction("Rotate"), "rotateAction", true, true, QKeySequence(Qt::Key_E));
-    scaleAction_ = configureAction(transformMenu->addAction("Scale"), "scaleAction", true, true, QKeySequence(Qt::Key_R));
-
-    QObject::connect(translateAction_, &QAction::triggered, this, [this]() { setTransformUiMode(TransformUiMode::Translate); });
-    QObject::connect(rotateAction_, &QAction::triggered, this, [this]() { setTransformUiMode(TransformUiMode::Rotate); });
-    QObject::connect(scaleAction_, &QAction::triggered, this, [this]() { setTransformUiMode(TransformUiMode::Scale); });
-    setTransformUiMode(TransformUiMode::Translate);
-
-    QMenu* axisMenu = transformMenu->addMenu("Axis Orientation");
-    worldAxisAction_ = configureAction(axisMenu->addAction("World"), "worldAxisAction", true, true);
-    localAxisAction_ = configureAction(axisMenu->addAction("Local"), "localAxisAction", true, true);
-
-    QObject::connect(worldAxisAction_, &QAction::triggered, this, [this]() { setAxisUiOrientation(AxisUiOrientation::World); });
-    QObject::connect(localAxisAction_, &QAction::triggered, this, [this]() { setAxisUiOrientation(AxisUiOrientation::Local); });
-    setAxisUiOrientation(AxisUiOrientation::World);
-}
-
-void EditorShell::createToolbar()
-{
-    toolbar_ = addToolBar("Viewport");
-    toolbar_->setMovable(false);
-    addImportCreateToolbarSection();
-    addRigToolbarSection();
-    addViewToolbarSection();
-    addTransformToolbarSection();
-    addDisplayToolbarSection();
-}
-
-void EditorShell::addImportCreateToolbarSection()
-{
-    toolbar_->addAction(importFbxAction_);
-    toolbar_->addAction(polygonPrimitivesAction_);
-    toolbar_->addAction(createJointAction_);
-}
-
-void EditorShell::addRigToolbarSection()
-{
-    toolbar_->addSeparator();
-    toolbar_->addAction(markHierarchyParentAction_);
-    toolbar_->addAction(parentToMarkedParentAction_);
-    toolbar_->addAction(unparentSelectedAction_);
-    toolbar_->addAction(alignJointOrientationAction_);
-    toolbar_->addAction(captureBindPoseAction_);
-}
-
-void EditorShell::addViewToolbarSection()
-{
-    toolbar_->addSeparator();
-    toolbar_->addAction(resetCameraAction_);
-    toolbar_->addAction(frameSceneAction_);
-    toolbar_->addAction(frameSelectedAction_);
-}
-
-void EditorShell::addTransformToolbarSection()
-{
-    toolbar_->addSeparator();
-    toolbar_->addAction(translateAction_);
-    toolbar_->addAction(rotateAction_);
-    toolbar_->addAction(scaleAction_);
-    toolbar_->addAction(worldAxisAction_);
-    toolbar_->addAction(localAxisAction_);
-}
-
-void EditorShell::addDisplayToolbarSection()
-{
-    toolbar_->addSeparator();
-    toolbar_->addAction(wireframeAction_);
-    toolbar_->addAction(showAxisAction_);
-    toolbar_->addAction(backfaceCullingAction_);
 }
 
 void EditorShell::createDocks()
@@ -832,153 +436,81 @@ void EditorShell::createDocks()
     setCentralWidget(viewport_);
     installPanelActivationTracking(viewport_, ActivePanel::Viewport);
     viewportDock_ = nullptr;
-    createOutlinerDock();
-    createInspectorDock();
-    resizeDocks({ outlinerDock_, inspectorDock_ }, { 280, 320 }, Qt::Horizontal);
-    createPrimitivePaletteDock();
-    createScriptEditorDock();
-    createTimelineDock();
-    createRangeSliderDock();
-    createCommandLineDock();
-    createGraphEditorDock();
-}
 
-void EditorShell::createOutlinerDock()
-{
-    outlinerDock_ = new QDockWidget("Outliner", this);
-    configureDockWidget(
-        outlinerDock_,
-        "OutlinerDock",
-        Qt::AllDockWidgetAreas,
+    // ── Register panels with WorkspaceManager ────────────────────────────────
+    // WorkspaceManager creates the QDockWidget wrappers; EditorShell creates
+    // the content widgets and wires activation tracking after registration.
+
+    auto registerAndTrack = [this](
+        const QString& id,
+        const QString& displayName,
+        QWidget* panel,
+        ActivePanel activePanel,
+        Qt::DockWidgetArea defaultArea,
+        QDockWidget::DockWidgetFeatures features,
+        Qt::DockWidgetAreas allowedAreas = Qt::AllDockWidgetAreas,
+        bool compactTitleBar = false)
+    {
+        panel->setProperty("panelSurface", "true");
+        workspaceManager_->registerPanel(id, displayName, panel, defaultArea, features, allowedAreas, compactTitleBar);
+        QDockWidget* d = workspaceManager_->dock(id);
+        installPanelActivationTracking(panel, activePanel, d);
+        return d;
+    };
+
+    outlinerDock_ = registerAndTrack(
+        WorkspaceManager::kOutliner, "Outliner", createOutlinerPanel(),
+        ActivePanel::Outliner, Qt::LeftDockWidgetArea,
         QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
-    QWidget* panel = createOutlinerPanel();
-    panel->setProperty("panelSurface", "true");
-    outlinerDock_->setWidget(panel);
-    installPanelActivationTracking(panel, ActivePanel::Outliner, outlinerDock_);
-    addDockWidget(Qt::LeftDockWidgetArea, outlinerDock_);
-}
 
-void EditorShell::createInspectorDock()
-{
-    inspectorDock_ = new QDockWidget("Channel Box", this);
-    configureDockWidget(
-        inspectorDock_,
-        "InspectorDock",
-        Qt::AllDockWidgetAreas,
+    inspectorDock_ = registerAndTrack(
+        WorkspaceManager::kChannelBox, "Channel Box", createInspectorPanel(),
+        ActivePanel::ChannelBox, Qt::RightDockWidgetArea,
         QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
-    QWidget* panel = createInspectorPanel();
-    panel->setProperty("panelSurface", "true");
-    inspectorDock_->setWidget(panel);
-    installPanelActivationTracking(panel, ActivePanel::ChannelBox, inspectorDock_);
-    addDockWidget(Qt::RightDockWidgetArea, inspectorDock_);
-}
 
-void EditorShell::createPrimitivePaletteDock()
-{
-    polygonPrimitivesDock_ = new QDockWidget("Polygon Primitives", this);
-    configureDockWidget(
-        polygonPrimitivesDock_,
-        "PolygonPrimitivesDock",
-        Qt::AllDockWidgetAreas,
+    polygonPrimitivesDock_ = registerAndTrack(
+        WorkspaceManager::kPrimitivePalette, "Polygon Primitives", createPrimitivePalettePanel(),
+        ActivePanel::PrimitivePalette, Qt::RightDockWidgetArea,
         QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
-    QWidget* panel = createPrimitivePalettePanel();
-    panel->setProperty("panelSurface", "true");
-    polygonPrimitivesDock_->setWidget(panel);
-    installPanelActivationTracking(panel, ActivePanel::PrimitivePalette, polygonPrimitivesDock_);
-    addDockWidget(Qt::RightDockWidgetArea, polygonPrimitivesDock_);
-    polygonPrimitivesDock_->setFloating(true);
-    polygonPrimitivesDock_->hide();
-}
 
-void EditorShell::createScriptEditorDock()
-{
-    scriptEditorDock_ = new QDockWidget("Script Editor", this);
-    configureDockWidget(
-        scriptEditorDock_,
-        "ScriptEditorDock",
-        Qt::AllDockWidgetAreas,
+    scriptEditorDock_ = registerAndTrack(
+        WorkspaceManager::kScriptEditor, "Script Editor", createScriptEditorPanel(),
+        ActivePanel::ScriptEditor, Qt::BottomDockWidgetArea,
         QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
-    QWidget* panel = createScriptEditorPanel();
-    panel->setProperty("panelSurface", "true");
-    scriptEditorDock_->setWidget(panel);
-    installPanelActivationTracking(panel, ActivePanel::ScriptEditor, scriptEditorDock_);
-    addDockWidget(Qt::BottomDockWidgetArea, scriptEditorDock_);
-    scriptEditorDock_->setFloating(true);
-    scriptEditorDock_->hide();
-}
 
-void EditorShell::createTimelineDock()
-{
-    timeSliderDock_ = new QDockWidget("Time Slider", this);
-    configureDockWidget(
-        timeSliderDock_,
-        "TimeSliderDock",
+    timeSliderDock_ = registerAndTrack(
+        WorkspaceManager::kTimeline, "Time Slider", createTimeSliderPanel(),
+        ActivePanel::TimeSlider, Qt::BottomDockWidgetArea,
+        QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable,
         Qt::BottomDockWidgetArea | Qt::TopDockWidgetArea,
-        QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
-    QWidget* panel = createTimeSliderPanel();
-    panel->setProperty("panelSurface", "true");
-    timeSliderDock_->setWidget(panel);
-    bindCompactDockTitleBehavior(timeSliderDock_);
-    installPanelActivationTracking(panel, ActivePanel::TimeSlider, timeSliderDock_);
-    addDockWidget(Qt::BottomDockWidgetArea, timeSliderDock_);
-    resizeDocks({ timeSliderDock_ }, { 150 }, Qt::Vertical);
-}
+        /*compactTitleBar=*/true);
 
-void EditorShell::createRangeSliderDock()
-{
-    rangeSliderDock_ = new QDockWidget("Range Slider", this);
-    configureDockWidget(
-        rangeSliderDock_,
-        "RangeSliderDock",
+    rangeSliderDock_ = registerAndTrack(
+        WorkspaceManager::kRangeSlider, "Range Slider", createRangeSliderPanel(),
+        ActivePanel::RangeSlider, Qt::BottomDockWidgetArea,
+        QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable,
         Qt::BottomDockWidgetArea | Qt::TopDockWidgetArea,
-        QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
-    QWidget* panel = createRangeSliderPanel();
-    panel->setProperty("panelSurface", "true");
-    rangeSliderDock_->setWidget(panel);
-    bindCompactDockTitleBehavior(rangeSliderDock_);
-    installPanelActivationTracking(panel, ActivePanel::RangeSlider, rangeSliderDock_);
-    addDockWidget(Qt::BottomDockWidgetArea, rangeSliderDock_);
-    splitDockWidget(timeSliderDock_, rangeSliderDock_, Qt::Vertical);
-    resizeDocks({ timeSliderDock_, rangeSliderDock_ }, { 112, 56 }, Qt::Vertical);
-}
+        /*compactTitleBar=*/true);
 
-void EditorShell::createCommandLineDock()
-{
-    commandLineDock_ = new QDockWidget("Command Line", this);
-    configureDockWidget(
-        commandLineDock_,
-        "CommandLineDock",
+    commandLineDock_ = registerAndTrack(
+        WorkspaceManager::kCommandLine, "Command Line", createCommandLinePanel(),
+        ActivePanel::CommandLine, Qt::BottomDockWidgetArea,
+        QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable,
         Qt::BottomDockWidgetArea | Qt::TopDockWidgetArea,
-        QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
-    QWidget* panel = createCommandLinePanel();
-    panel->setProperty("panelSurface", "true");
-    commandLineDock_->setWidget(panel);
-    bindCompactDockTitleBehavior(commandLineDock_);
-    installPanelActivationTracking(panel, ActivePanel::CommandLine, commandLineDock_);
-    addDockWidget(Qt::BottomDockWidgetArea, commandLineDock_);
-    splitDockWidget(rangeSliderDock_ != nullptr ? rangeSliderDock_ : timeSliderDock_, commandLineDock_, Qt::Vertical);
-    if (rangeSliderDock_ != nullptr) {
-        resizeDocks({ timeSliderDock_, rangeSliderDock_, commandLineDock_ }, { 112, 56, 34 }, Qt::Vertical);
-    } else {
-        resizeDocks({ timeSliderDock_, commandLineDock_ }, { 150, 34 }, Qt::Vertical);
-    }
-}
+        /*compactTitleBar=*/true);
 
-void EditorShell::createGraphEditorDock()
-{
-    graphEditorDock_ = new QDockWidget("Graph Editor", this);
-    configureDockWidget(
-        graphEditorDock_,
-        "GraphEditorDock",
-        Qt::AllDockWidgetAreas,
+    graphEditorDock_ = registerAndTrack(
+        WorkspaceManager::kGraphEditor, "Graph Editor", createGraphEditorPanel(),
+        ActivePanel::GraphEditor, Qt::BottomDockWidgetArea,
         QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
-    QWidget* panel = createGraphEditorPanel();
-    panel->setProperty("panelSurface", "true");
-    graphEditorDock_->setWidget(panel);
-    installPanelActivationTracking(panel, ActivePanel::GraphEditor, graphEditorDock_);
-    addDockWidget(Qt::BottomDockWidgetArea, graphEditorDock_);
-    tabifyDockWidget(timeSliderDock_, graphEditorDock_);
-    graphEditorDock_->hide();
+
+    // Rig Panel — hidden in Default/Animation presets; raised in Rigging preset.
+    rigPanelDock_ = registerAndTrack(
+        WorkspaceManager::kRigPanel, "Rig Panel", createRigPanel(),
+        ActivePanel::RigPanel, Qt::RightDockWidgetArea,
+        QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetClosable);
+
+    workspaceManager_->applyInitialLayout();
 }
 
 QWidget* EditorShell::createPrimitivePalettePanel()
@@ -1110,7 +642,60 @@ QWidget* EditorShell::createInspectorPanel()
     visibilityCheckBox_->setObjectName("visibilityCheckBox");
     visibilityCheckBox_->setProperty("variant", "channelVisibility");
 
-    jointToolsWidget_ = new QWidget(inspectorDetailsWidget_);
+    // Joint tools live in the separate Rig Panel dock (registered in createDocks).
+    // The widgets (jointToolsWidget_, jointOrientX/Y/ZSpinBox_, etc.) are created
+    // in createRigPanel() but stored as EditorShell members so EditorInspectorController
+    // can still drive them via inspectorWidgets().
+
+    QVBoxLayout* transformSectionLayout = nullptr;
+    QWidget* transformSection = createChannelSection("Transform", inspectorDetailsWidget_, &transformSectionLayout);
+    transformSectionLayout->addWidget(channelObjectNameLabel_);
+    transformSectionLayout->addWidget(createChannelRow("Translate X", translateXSpinBox_, transformSection));
+    transformSectionLayout->addWidget(createChannelRow("Translate Y", translateYSpinBox_, transformSection));
+    transformSectionLayout->addWidget(createChannelRow("Translate Z", translateZSpinBox_, transformSection));
+    transformSectionLayout->addWidget(createChannelRow("Rotate X", rotateXSpinBox_, transformSection));
+    transformSectionLayout->addWidget(createChannelRow("Rotate Y", rotateYSpinBox_, transformSection));
+    transformSectionLayout->addWidget(createChannelRow("Rotate Z", rotateZSpinBox_, transformSection));
+    transformSectionLayout->addWidget(createChannelRow("Scale X", scaleXSpinBox_, transformSection));
+    transformSectionLayout->addWidget(createChannelRow("Scale Y", scaleYSpinBox_, transformSection));
+    transformSectionLayout->addWidget(createChannelRow("Scale Z", scaleZSpinBox_, transformSection));
+    transformSectionLayout->addWidget(createChannelRow("Visibility", visibilityCheckBox_, transformSection));
+
+    inspectorDetailsLayout->addWidget(transformSection);
+
+    for (QDoubleSpinBox* spinBox : { translateXSpinBox_, translateYSpinBox_, translateZSpinBox_,
+             rotateXSpinBox_, rotateYSpinBox_, rotateZSpinBox_,
+             scaleXSpinBox_, scaleYSpinBox_, scaleZSpinBox_ }) {
+        QObject::connect(spinBox, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) {
+            applyChannelBoxToSelection();
+        });
+    }
+    QObject::connect(visibilityCheckBox_, &QCheckBox::toggled, this, &EditorShell::applyVisibilityToSelection);
+
+    frameSelectedButton_ = new QPushButton("Frame Selected", inspectorPanel);
+    frameSelectedButton_->setObjectName("frameSelectedButton");
+    frameSelectedButton_->setEnabled(false);
+    QObject::connect(frameSelectedButton_, &QPushButton::clicked, this, &EditorShell::frameSelectedObject);
+
+    inspectorLayout->addWidget(inspectorEmptyStateLabel_);
+    inspectorLayout->addWidget(inspectorDetailsWidget_);
+    inspectorLayout->addWidget(frameSelectedButton_);
+    inspectorLayout->addStretch();
+
+    return inspectorPanel;
+}
+
+QWidget* EditorShell::createRigPanel()
+{
+    QWidget* rigPanel = new QWidget(this);
+    rigPanel->setObjectName("channelBoxPanel"); // reuse style — same dark bg
+
+    QVBoxLayout* rigLayout = new QVBoxLayout(rigPanel);
+    rigLayout->setContentsMargins(12, 12, 12, 12);
+    rigLayout->setSpacing(8);
+
+    // ── Joint tools ──────────────────────────────────────────────────────────
+    jointToolsWidget_ = new QWidget(rigPanel);
     jointToolsWidget_->setObjectName("jointToolsWidget");
     QVBoxLayout* jointToolsLayout = new QVBoxLayout(jointToolsWidget_);
     jointToolsLayout->setContentsMargins(0, 0, 0, 0);
@@ -1151,56 +736,28 @@ QWidget* EditorShell::createInspectorPanel()
     jointToolsLayout->addWidget(captureBindPoseButton_);
     jointToolsLayout->addWidget(captureBindPoseRecursiveButton_);
 
-    QVBoxLayout* transformSectionLayout = nullptr;
-    QWidget* transformSection = createChannelSection("Transform", inspectorDetailsWidget_, &transformSectionLayout);
-    transformSectionLayout->addWidget(channelObjectNameLabel_);
-    transformSectionLayout->addWidget(createChannelRow("Translate X", translateXSpinBox_, transformSection));
-    transformSectionLayout->addWidget(createChannelRow("Translate Y", translateYSpinBox_, transformSection));
-    transformSectionLayout->addWidget(createChannelRow("Translate Z", translateZSpinBox_, transformSection));
-    transformSectionLayout->addWidget(createChannelRow("Rotate X", rotateXSpinBox_, transformSection));
-    transformSectionLayout->addWidget(createChannelRow("Rotate Y", rotateYSpinBox_, transformSection));
-    transformSectionLayout->addWidget(createChannelRow("Rotate Z", rotateZSpinBox_, transformSection));
-    transformSectionLayout->addWidget(createChannelRow("Scale X", scaleXSpinBox_, transformSection));
-    transformSectionLayout->addWidget(createChannelRow("Scale Y", scaleYSpinBox_, transformSection));
-    transformSectionLayout->addWidget(createChannelRow("Scale Z", scaleZSpinBox_, transformSection));
-    transformSectionLayout->addWidget(createChannelRow("Visibility", visibilityCheckBox_, transformSection));
-
-    QVBoxLayout* jointSectionLayout = nullptr;
-    QWidget* jointSection = createChannelSection("Joint Tools", inspectorDetailsWidget_, &jointSectionLayout);
-    jointSectionLayout->addWidget(jointToolsWidget_);
-
-    inspectorDetailsLayout->addWidget(transformSection);
-    inspectorDetailsLayout->addWidget(jointSection);
-
-    for (QDoubleSpinBox* spinBox : { translateXSpinBox_, translateYSpinBox_, translateZSpinBox_,
-             rotateXSpinBox_, rotateYSpinBox_, rotateZSpinBox_,
-             scaleXSpinBox_, scaleYSpinBox_, scaleZSpinBox_ }) {
-        QObject::connect(spinBox, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) {
-            applyChannelBoxToSelection();
-        });
-    }
     for (QDoubleSpinBox* spinBox : { jointOrientXSpinBox_, jointOrientYSpinBox_, jointOrientZSpinBox_ }) {
         QObject::connect(spinBox, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) {
             applyJointOrientationToSelection();
         });
     }
-    QObject::connect(visibilityCheckBox_, &QCheckBox::toggled, this, &EditorShell::applyVisibilityToSelection);
-    QObject::connect(resetJointOrientationButton_, &QPushButton::clicked, this, &EditorShell::resetSelectedJointOrientation);
-    QObject::connect(alignJointOrientationButton_, &QPushButton::clicked, this, &EditorShell::alignSelectedJointOrientationToChild);
-    QObject::connect(captureBindPoseButton_, &QPushButton::clicked, this, &EditorShell::captureSelectedBindPose);
-    QObject::connect(captureBindPoseRecursiveButton_, &QPushButton::clicked, this, &EditorShell::captureSelectedBindPoseRecursive);
+    QObject::connect(resetJointOrientationButton_, &QPushButton::clicked,
+                     this, &EditorShell::resetSelectedJointOrientation);
+    QObject::connect(alignJointOrientationButton_, &QPushButton::clicked,
+                     this, &EditorShell::alignSelectedJointOrientationToChild);
+    QObject::connect(captureBindPoseButton_, &QPushButton::clicked,
+                     this, &EditorShell::captureSelectedBindPose);
+    QObject::connect(captureBindPoseRecursiveButton_, &QPushButton::clicked,
+                     this, &EditorShell::captureSelectedBindPoseRecursive);
 
-    frameSelectedButton_ = new QPushButton("Frame Selected", inspectorPanel);
-    frameSelectedButton_->setObjectName("frameSelectedButton");
-    frameSelectedButton_->setEnabled(false);
-    QObject::connect(frameSelectedButton_, &QPushButton::clicked, this, &EditorShell::frameSelectedObject);
+    QVBoxLayout* jointSectionLayout = nullptr;
+    QWidget* jointSection = createChannelSection("Joint Tools", rigPanel, &jointSectionLayout);
+    jointSectionLayout->addWidget(jointToolsWidget_);
 
-    inspectorLayout->addWidget(inspectorEmptyStateLabel_);
-    inspectorLayout->addWidget(inspectorDetailsWidget_);
-    inspectorLayout->addWidget(frameSelectedButton_);
-    inspectorLayout->addStretch();
+    rigLayout->addWidget(jointSection);
+    rigLayout->addStretch();
 
-    return inspectorPanel;
+    return rigPanel;
 }
 
 QWidget* EditorShell::createTimeSliderPanel()
@@ -1212,11 +769,11 @@ QWidget* EditorShell::createTimeSliderPanel()
 
     animationTimelinePanel_ = new AnimationTimelinePanel(panel);
     animationTimelinePanel_->bindTimelineActions(
-        duplicateKeyAction_,
-        shiftKeysLeftAction_,
-        shiftKeysRightAction_,
-        previousKeyAction_,
-        nextKeyAction_);
+        editorMenuBar_->actions().duplicateKey,
+        editorMenuBar_->actions().shiftKeysLeft,
+        editorMenuBar_->actions().shiftKeysRight,
+        editorMenuBar_->actions().previousKey,
+        editorMenuBar_->actions().nextKey);
     animationTimelinePanel_->setPlaybackRangeChangedCallback([this](int startFrame, int endFrame) {
         if (!updatingTimeSlider_) {
             playbackController_.setPlaybackRange(startFrame, endFrame);
@@ -1570,6 +1127,9 @@ void EditorShell::savePreferences()
         saveState(),
         animationState_.autoKeyEnabled,
     });
+    if (workspaceManager_ != nullptr) {
+        workspaceManager_->saveSessionLayout();
+    }
     EditorScriptLogController::appendComment(scriptHistoryTextEdit_, "Saved Phoenix Editor preferences");
     showStatusMessageIfPresent("Preferences saved", 2000);
 }
@@ -1583,6 +1143,10 @@ void EditorShell::loadPreferences()
 
     if (!preferences.windowState.isEmpty()) {
         restoreState(preferences.windowState);
+    }
+
+    if (workspaceManager_ != nullptr) {
+        workspaceManager_->restoreSessionLayout();
     }
 
     animationState_ = EditorAnimationController::setAutoKeyEnabled(
@@ -1860,9 +1424,10 @@ ScriptCommandContext EditorShell::createScriptCommandContext()
         viewport_->setTransformMode(mode);
     };
     viewportBindings.setToolActionChecks = [this](bool translateChecked, bool rotateChecked, bool scaleChecked) {
-        translateAction_->setChecked(translateChecked);
-        rotateAction_->setChecked(rotateChecked);
-        scaleAction_->setChecked(scaleChecked);
+        const auto& a = editorMenuBar_->actions();
+        a.translate->setChecked(translateChecked);
+        a.rotate->setChecked(rotateChecked);
+        a.scale->setChecked(scaleChecked);
     };
 
     EditorSelectionController::Context selection = selectionContext();
@@ -2046,11 +1611,15 @@ void EditorShell::redoLastChange()
 
 void EditorShell::updateUndoRedoActions()
 {
-    if (undoAction_ != nullptr) {
-        undoAction_->setEnabled(historyController_.canUndo());
+    if (editorMenuBar_ == nullptr) {
+        return;
     }
-    if (redoAction_ != nullptr) {
-        redoAction_->setEnabled(historyController_.canRedo());
+    const auto& a = editorMenuBar_->actions();
+    if (a.undo != nullptr) {
+        a.undo->setEnabled(historyController_.canUndo());
+    }
+    if (a.redo != nullptr) {
+        a.redo->setEnabled(historyController_.canRedo());
     }
 }
 
@@ -2230,13 +1799,17 @@ void EditorShell::setTransformUiMode(TransformUiMode mode)
 
 void EditorShell::setViewCameraPreset(ViewCameraUiPreset preset)
 {
-    if (perspectiveCameraAction_ == nullptr
-            || frontCameraAction_ == nullptr
-            || backCameraAction_ == nullptr
-            || leftCameraAction_ == nullptr
-            || rightCameraAction_ == nullptr
-            || topCameraAction_ == nullptr
-            || bottomCameraAction_ == nullptr) {
+    if (editorMenuBar_ == nullptr) {
+        return;
+    }
+    const auto& a = editorMenuBar_->actions();
+    if (a.perspectiveCamera == nullptr
+            || a.frontCamera == nullptr
+            || a.backCamera == nullptr
+            || a.leftCamera == nullptr
+            || a.rightCamera == nullptr
+            || a.topCamera == nullptr
+            || a.bottomCamera == nullptr) {
         return;
     }
 
@@ -2297,108 +1870,17 @@ void EditorShell::setAxisUiOrientation(AxisUiOrientation orientation)
 
 void EditorShell::restoreDefaultWorkspaceLayout()
 {
-    if (outlinerDock_ == nullptr || inspectorDock_ == nullptr || timeSliderDock_ == nullptr) {
+    if (workspaceManager_ == nullptr) {
         return;
     }
-
-    outlinerDock_->setFloating(false);
-    inspectorDock_->setFloating(false);
-    timeSliderDock_->setFloating(false);
-    if (rangeSliderDock_ != nullptr) {
-        rangeSliderDock_->setFloating(false);
-    }
-    if (commandLineDock_ != nullptr) {
-        commandLineDock_->setFloating(false);
-    }
-    if (graphEditorDock_ != nullptr) {
-        graphEditorDock_->setFloating(false);
-    }
-
-    addDockWidget(Qt::LeftDockWidgetArea, outlinerDock_);
-    addDockWidget(Qt::RightDockWidgetArea, inspectorDock_);
-    addDockWidget(Qt::BottomDockWidgetArea, timeSliderDock_);
-    if (rangeSliderDock_ != nullptr) {
-        addDockWidget(Qt::BottomDockWidgetArea, rangeSliderDock_);
-        splitDockWidget(timeSliderDock_, rangeSliderDock_, Qt::Vertical);
-    }
-    if (commandLineDock_ != nullptr) {
-        addDockWidget(Qt::BottomDockWidgetArea, commandLineDock_);
-        splitDockWidget(rangeSliderDock_ != nullptr ? rangeSliderDock_ : timeSliderDock_, commandLineDock_, Qt::Vertical);
-    }
-    if (graphEditorDock_ != nullptr) {
-        addDockWidget(Qt::BottomDockWidgetArea, graphEditorDock_);
-        tabifyDockWidget(timeSliderDock_, graphEditorDock_);
-    }
-    resizeDocks({ outlinerDock_, inspectorDock_ }, { 280, 320 }, Qt::Horizontal);
-    if (rangeSliderDock_ != nullptr && commandLineDock_ != nullptr) {
-        resizeDocks({ timeSliderDock_, rangeSliderDock_, commandLineDock_ }, { 112, 56, 34 }, Qt::Vertical);
-    } else if (commandLineDock_ != nullptr) {
-        resizeDocks({ timeSliderDock_, commandLineDock_ }, { 150, 34 }, Qt::Vertical);
-    } else {
-        resizeDocks({ timeSliderDock_ }, { 150 }, Qt::Vertical);
-    }
-
-    outlinerDock_->show();
-    inspectorDock_->show();
-    timeSliderDock_->show();
-    if (rangeSliderDock_ != nullptr) {
-        rangeSliderDock_->show();
-    }
-    if (commandLineDock_ != nullptr) {
-        commandLineDock_->show();
-    }
-    if (graphEditorDock_ != nullptr) {
-        graphEditorDock_->show();
-        timeSliderDock_->raise();
-    }
+    workspaceManager_->applyDefaultPreset();
     applyViewportUiOperationResult(EditorViewportUiController::buildWorkspaceLayoutResult(), 2000);
 }
 
 void EditorShell::restoreBottomPanelLayout()
 {
-    if (timeSliderDock_ == nullptr) {
-        return;
-    }
-
-    timeSliderDock_->setFloating(false);
-    addDockWidget(Qt::BottomDockWidgetArea, timeSliderDock_);
-
-    if (rangeSliderDock_ != nullptr) {
-        rangeSliderDock_->setFloating(false);
-        addDockWidget(Qt::BottomDockWidgetArea, rangeSliderDock_);
-        splitDockWidget(timeSliderDock_, rangeSliderDock_, Qt::Vertical);
-    }
-
-    if (commandLineDock_ != nullptr) {
-        commandLineDock_->setFloating(false);
-        addDockWidget(Qt::BottomDockWidgetArea, commandLineDock_);
-        splitDockWidget(rangeSliderDock_ != nullptr ? rangeSliderDock_ : timeSliderDock_, commandLineDock_, Qt::Vertical);
-    }
-
-    if (graphEditorDock_ != nullptr) {
-        graphEditorDock_->setFloating(false);
-        addDockWidget(Qt::BottomDockWidgetArea, graphEditorDock_);
-        tabifyDockWidget(timeSliderDock_, graphEditorDock_);
-    }
-
-    if (rangeSliderDock_ != nullptr && commandLineDock_ != nullptr) {
-        resizeDocks({ timeSliderDock_, rangeSliderDock_, commandLineDock_ }, { 112, 56, 34 }, Qt::Vertical);
-    } else if (commandLineDock_ != nullptr) {
-        resizeDocks({ timeSliderDock_, commandLineDock_ }, { 150, 34 }, Qt::Vertical);
-    } else {
-        resizeDocks({ timeSliderDock_ }, { 150 }, Qt::Vertical);
-    }
-
-    timeSliderDock_->show();
-    if (rangeSliderDock_ != nullptr) {
-        rangeSliderDock_->show();
-    }
-    if (commandLineDock_ != nullptr) {
-        commandLineDock_->show();
-    }
-    if (graphEditorDock_ != nullptr) {
-        graphEditorDock_->show();
-        timeSliderDock_->raise();
+    if (workspaceManager_ != nullptr) {
+        workspaceManager_->restoreBottomPanelLayout();
     }
 }
 
@@ -2470,7 +1952,7 @@ void EditorShell::applyAnimationState(const EditorAnimationState& state, bool lo
         const SceneObject* object = viewport_->findObject(selectedObjectId_);
         const bool canFrame = object != nullptr && object->isVisible() && object->worldBounds().isValid();
         frameSelectedButton_->setEnabled(canFrame);
-        frameSelectedAction_->setEnabled(canFrame);
+        editorMenuBar_->actions().frameSelected->setEnabled(canFrame);
     }
 
     if (logToScript) {
@@ -2631,16 +2113,17 @@ EditorInspectorController::InspectorWidgets EditorShell::inspectorWidgets() cons
 
 EditorInspectorController::InspectorActions EditorShell::inspectorActions() const
 {
+    const auto& a = editorMenuBar_->actions();
     return EditorShellContexts::buildInspectorActions(
-        markHierarchyParentAction_,
-        parentToMarkedParentAction_,
-        unparentSelectedAction_,
-        bindSkinAction_,
-        resetJointOrientationAction_,
-        alignJointOrientationAction_,
-        captureBindPoseAction_,
-        captureBindPoseRecursiveAction_,
-        frameSelectedAction_,
+        a.markHierarchyParent,
+        a.parentToMarkedParent,
+        a.unparentSelected,
+        a.bindSkin,
+        a.resetJointOrientation,
+        a.alignJointOrientation,
+        a.captureBindPose,
+        a.captureBindPoseRecursive,
+        a.frameSelected,
         frameSelectedButton_,
         resetJointOrientationButton_,
         alignJointOrientationButton_,
@@ -2732,19 +2215,20 @@ EditorSelectionController::Context EditorShell::selectionContext() const
 
 EditorViewportUiController::ActionSet EditorShell::viewportUiActions() const
 {
+    const auto& a = editorMenuBar_->actions();
     return EditorShellContexts::buildViewportUiActions(
-        translateAction_,
-        rotateAction_,
-        scaleAction_,
-        perspectiveCameraAction_,
-        frontCameraAction_,
-        backCameraAction_,
-        leftCameraAction_,
-        rightCameraAction_,
-        topCameraAction_,
-        bottomCameraAction_,
-        worldAxisAction_,
-        localAxisAction_);
+        a.translate,
+        a.rotate,
+        a.scale,
+        a.perspectiveCamera,
+        a.frontCamera,
+        a.backCamera,
+        a.leftCamera,
+        a.rightCamera,
+        a.topCamera,
+        a.bottomCamera,
+        a.worldAxis,
+        a.localAxis);
 }
 
 bool EditorShell::showErrorMessageIfPresent(const QString& errorMessage, int timeoutMs)
@@ -2890,7 +2374,7 @@ void EditorShell::applyChannelBoxOperationResult(const EditorChannelBoxControlle
         visibilityCheckBox_->setText(result.visible ? "on" : "off");
         const bool canFrame = object != nullptr && object->isVisible() && object->worldBounds().isValid();
         frameSelectedButton_->setEnabled(canFrame);
-        frameSelectedAction_->setEnabled(canFrame);
+        editorMenuBar_->actions().frameSelected->setEnabled(canFrame);
         EditorScriptLogController::logVisibilityChange(scriptHistoryTextEdit_, object, result.visible);
     } else if (!result.commandLine.isEmpty() || !result.resultLine.isEmpty()) {
         appendScriptResultLogLines(QString(), result.commandLine, result.resultLine);

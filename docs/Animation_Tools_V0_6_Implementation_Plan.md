@@ -2,7 +2,7 @@
 
 ## Status
 
-`Step 3 - Implementation In Progress`
+`Step 4 - Phase 1 QA Complete`
 
 Design source:
 
@@ -17,8 +17,8 @@ Gate status:
 
 Progress snapshot:
 
-* done: `Task 1`, `Task 2`, `Task 3`, `Task 4`
-* in progress: `Task 5`, `Task 6`
+* done: `Task 1`, `Task 2`, `Task 3`, `Task 4`, `Task 5`, `Task 6`
+* Phase 1 QA: passed 2026-08-06
 
 ---
 
@@ -104,17 +104,19 @@ Da vao code:
 
 ## Validation Checklist
 
-* duplicate key dung transform
-* shift key giu sort dung
-* next/previous key jump dung
-* UI action va script command cho cung ket qua
-* `ctest` pass
-* runtime QA trong app chua xac nhan
+* duplicate key dung transform ✓
+* shift key giu sort dung ✓
+* next/previous key jump dung ✓
+* UI action va script command cho cung ket qua ✓
+* `ctest` pass ✓ (2/2)
+* runtime QA trong app ✓ (2026-08-06)
 
 ---
 
 ## Next Step After This Plan
 
-1. mo app
-2. manual QA `v0.6 phase 1`
-3. quyet co mo `Task 4 - Timeline Range Foundation` ngay hay khong
+Phase 1 closed. Options:
+
+1. v0.6 Phase 2 — Timeline Interaction Foundation (range-based key ops, range UI)
+2. v0.6 Phase 3 — Playback Polish (step by keyed frame, jump first/last, full v0.6 QA close)
+3. Post-v0.6 UI redesign — WorkspaceManager + PanelRegistry (locked decision, starts after v0.6 fully closed)

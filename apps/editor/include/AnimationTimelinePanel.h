@@ -48,6 +48,8 @@ private:
     void showTimelineContextMenu(const QPoint& position);
 
     QSpinBox* currentFrameSpinBox_ = nullptr;
+    QPushButton* setKeyButton_ = nullptr;
+    QPushButton* deleteKeyButton_ = nullptr;
     QPushButton* duplicateKeyButton_ = nullptr;
     QPushButton* shiftKeysLeftButton_ = nullptr;
     QPushButton* shiftKeysRightButton_ = nullptr;
@@ -55,6 +57,7 @@ private:
     QPushButton* playPauseButton_ = nullptr;
     QPushButton* previousKeyButton_ = nullptr;
     QPushButton* nextKeyButton_ = nullptr;
+    QLabel* timelineStatusLabel_ = nullptr;
     QAction* duplicateKeyAction_ = nullptr;
     QAction* shiftKeysLeftAction_ = nullptr;
     QAction* shiftKeysRightAction_ = nullptr;

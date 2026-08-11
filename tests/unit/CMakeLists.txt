@@ -58,6 +58,7 @@ add_executable(editor_ui_tests
     ${CMAKE_SOURCE_DIR}/apps/editor/src/ViewportWorkspaceWidget.cpp
     ${CMAKE_SOURCE_DIR}/src/core/app/EditorShell.cpp
     ${CMAKE_SOURCE_DIR}/src/core/app/EditorShellContexts.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/app/WorkspaceManager.cpp
     ${CMAKE_SOURCE_DIR}/src/animation/editor/EditorAnimationFlowController.cpp
     ${CMAKE_SOURCE_DIR}/src/animation/editor/EditorAnimationSceneMutation.cpp
     ${CMAKE_SOURCE_DIR}/src/rigging/editor/EditorRiggingController.cpp

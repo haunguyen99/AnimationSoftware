@@ -27,14 +27,16 @@
 #include "EditorViewportCommandController.h"
 #include "EditorViewportUiController.h"
 #include "core/commands/ScriptCommandSystem.h"
+#include "core/app/EditorMenuBar.h"
 #include "scene/PrimitiveMeshFactory.h"
 #include "scene/Scene.h"
 
+class EditorMenuBar;
+class WorkspaceManager;
 class ViewportWorkspaceWidget;
 class AnimationTimelinePanel;
 class RangeSliderPanel;
 class GraphEditorPanel;
-class QAction;
 class QToolBar;
 class QStatusBar;
 class QDockWidget;
@@ -69,7 +71,8 @@ private:
         CommandLine,
         GraphEditor,
         PrimitivePalette,
-        ScriptEditor
+        ScriptEditor,
+        RigPanel
     };
     bool eventFilter(QObject* watched, QEvent* event) override;
     enum class TransformUiMode
@@ -93,31 +96,7 @@ private:
         Top,
         Bottom
     };
-    void applyUnifiedTheme();
-    void createMenus();
-    void createEditMenu();
-    void createFileMenu();
-    void createCreateMenu();
-    void createRigMenu();
-    void createWindowsMenu();
-    void createAnimationMenu();
-    void createViewMenu();
-    void createTransformMenu();
-    void createToolbar();
-    void addImportCreateToolbarSection();
-    void addRigToolbarSection();
-    void addViewToolbarSection();
-    void addTransformToolbarSection();
-    void addDisplayToolbarSection();
     void createDocks();
-    void createOutlinerDock();
-    void createInspectorDock();
-    void createPrimitivePaletteDock();
-    void createScriptEditorDock();
-    void createTimelineDock();
-    void createRangeSliderDock();
-    void createCommandLineDock();
-    void createGraphEditorDock();
     void installPanelActivationTracking(QWidget* panelRoot, ActivePanel panel, QDockWidget* dock = nullptr);
     void setActivePanel(ActivePanel panel);
     void refreshActivePanelVisuals();
@@ -125,6 +104,7 @@ private:
     QWidget* createPrimitivePalettePanel();
     QWidget* createOutlinerPanel();
     QWidget* createInspectorPanel();
+    QWidget* createRigPanel();
     QWidget* createTimeSliderPanel();
     QWidget* createRangeSliderPanel();
     QWidget* createCommandLinePanel();
@@ -243,6 +223,7 @@ private:
     void redoLastChange();
     void updateUndoRedoActions();
 
+    WorkspaceManager* workspaceManager_ = nullptr;
     ViewportWorkspaceWidget* viewport_ = nullptr;
     QDockWidget* viewportDock_ = nullptr;
     QDockWidget* outlinerDock_ = nullptr;
@@ -253,6 +234,7 @@ private:
     QDockWidget* rangeSliderDock_ = nullptr;
     QDockWidget* commandLineDock_ = nullptr;
     QDockWidget* graphEditorDock_ = nullptr;
+    QDockWidget* rigPanelDock_ = nullptr;
     QTreeWidget* outlinerTree_ = nullptr;
     QListWidget* polygonPrimitivesList_ = nullptr;
     QPlainTextEdit* scriptHistoryTextEdit_ = nullptr;
@@ -285,59 +267,11 @@ private:
     QPushButton* captureBindPoseRecursiveButton_ = nullptr;
     QCheckBox* visibilityCheckBox_ = nullptr;
     QPushButton* frameSelectedButton_ = nullptr;
+    EditorMenuBar* editorMenuBar_ = nullptr;
     QToolBar* toolbar_ = nullptr;
     QLabel* activePanelStatusLabel_ = nullptr;
     QString commandLineBaseText_;
     QString commandLineBaseTone_ = "muted";
-    QAction* undoAction_ = nullptr;
-    QAction* redoAction_ = nullptr;
-    QAction* importFbxAction_ = nullptr;
-    QAction* newSceneAction_ = nullptr;
-    QAction* openSceneAction_ = nullptr;
-    QAction* saveSceneAction_ = nullptr;
-    QAction* saveSceneAsAction_ = nullptr;
-    QAction* incrementAndSaveAction_ = nullptr;
-    QAction* archiveSceneAction_ = nullptr;
-    QAction* savePreferencesAction_ = nullptr;
-    QAction* optimizeSceneSizeAction_ = nullptr;
-    QAction* exportAllAction_ = nullptr;
-    QAction* exportSelectionAction_ = nullptr;
-    QAction* resetCameraAction_ = nullptr;
-    QAction* frameSceneAction_ = nullptr;
-    QAction* frameSelectedAction_ = nullptr;
-    QAction* wireframeAction_ = nullptr;
-    QAction* showAxisAction_ = nullptr;
-    QAction* backfaceCullingAction_ = nullptr;
-    QAction* perspectiveCameraAction_ = nullptr;
-    QAction* frontCameraAction_ = nullptr;
-    QAction* backCameraAction_ = nullptr;
-    QAction* leftCameraAction_ = nullptr;
-    QAction* rightCameraAction_ = nullptr;
-    QAction* topCameraAction_ = nullptr;
-    QAction* bottomCameraAction_ = nullptr;
-    QAction* translateAction_ = nullptr;
-    QAction* rotateAction_ = nullptr;
-    QAction* scaleAction_ = nullptr;
-    QAction* worldAxisAction_ = nullptr;
-    QAction* localAxisAction_ = nullptr;
-    QAction* restoreWorkspaceLayoutAction_ = nullptr;
-    QAction* polygonPrimitivesAction_ = nullptr;
-    QAction* createJointAction_ = nullptr;
-    QAction* markHierarchyParentAction_ = nullptr;
-    QAction* parentToMarkedParentAction_ = nullptr;
-    QAction* unparentSelectedAction_ = nullptr;
-    QAction* bindSkinAction_ = nullptr;
-    QAction* resetJointOrientationAction_ = nullptr;
-    QAction* alignJointOrientationAction_ = nullptr;
-    QAction* captureBindPoseAction_ = nullptr;
-    QAction* captureBindPoseRecursiveAction_ = nullptr;
-    QAction* scriptEditorAction_ = nullptr;
-    QAction* graphEditorAction_ = nullptr;
-    QAction* duplicateKeyAction_ = nullptr;
-    QAction* shiftKeysLeftAction_ = nullptr;
-    QAction* shiftKeysRightAction_ = nullptr;
-    QAction* previousKeyAction_ = nullptr;
-    QAction* nextKeyAction_ = nullptr;
     ScriptCommandRegistry scriptCommandRegistry_;
     QString currentSceneFilePath_;
     std::uint64_t selectedObjectId_ = 0;

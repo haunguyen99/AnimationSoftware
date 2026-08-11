@@ -253,6 +253,7 @@ RangeSliderPanel::RangeSliderPanel(QWidget* parent)
     layout->setSpacing(8);
 
     autoKeyButton_ = new QPushButton("Auto", this);
+    autoKeyButton_->setObjectName("autoKeyButton");
     autoKeyButton_->setCheckable(true);
     autoKeyButton_->setFixedHeight(22);
     layout->addWidget(autoKeyButton_);

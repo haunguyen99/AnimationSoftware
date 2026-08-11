@@ -25,6 +25,10 @@ add_executable(phoenix_editor
     src/ViewportWorkspaceWidget.cpp
     ${CMAKE_SOURCE_DIR}/src/core/app/EditorShell.cpp
     ${CMAKE_SOURCE_DIR}/src/core/app/EditorShellContexts.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/app/EditorMenuBar.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/app/EditorTheme.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/app/EditorToolBar.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/app/WorkspaceManager.cpp
     ${CMAKE_SOURCE_DIR}/src/animation/editor/EditorAnimationFlowController.cpp
     ${CMAKE_SOURCE_DIR}/src/animation/editor/EditorAnimationSceneMutation.cpp
     ${CMAKE_SOURCE_DIR}/src/rigging/editor/EditorRiggingController.cpp
@@ -71,6 +75,8 @@ add_executable(phoenix_editor
     ${CMAKE_SOURCE_DIR}/src/rendering/ShaderUtils.cpp
     ${CMAKE_SOURCE_DIR}/src/rendering/ViewportRenderer.cpp
 )
+
+set_target_properties(phoenix_editor PROPERTIES AUTOMOC ON)
 
 target_include_directories(phoenix_editor
     PRIVATE

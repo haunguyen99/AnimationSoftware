@@ -1,0 +1,262 @@
+Phoenix Editor Beta — Feature Tree
+====================================
+Legend: [✅] Done  [🚧] WIP  [📋] Planned  [❌] Missing
+
+:/Phoenix Editor/
+├── 🗂 Scene Graph
+│   ├── [✅] SceneObject (Transform / Joint)
+│   ├── [✅] Scene container (flat QHash<Id, SceneObject>)
+│   ├── [✅] Hierarchy (parentId + childIds)
+│   ├── [✅] MeshData (vertex + index buffer)
+│   ├── [✅] Transform struct (translation / rotation / scale)
+│   ├── [✅] Bounds3D — AABB per object (local + world)
+│   ├── [✅] World transform cache (rebuildWorldData)
+│   ├── [✅] createObject / createJoint (auto-increment uint64_t ID)
+│   ├── [✅] reparentObject (keepWorldTransform option)
+│   ├── [✅] duplicateSubtree (recursive, new IDs)
+│   ├── [✅] removeObject (recursive)
+│   ├── [✅] appendScene — merge khi import
+│   └── [✅] optimizeStorage / debugDump
+│
+├── ⏱ Animation
+│   ├── Data
+│   │   ├── [✅] TransformKeyframeTrack — map<frame, Transform>
+│   │   ├── [✅] ObjectAnimationState — per-object, trong SceneObject
+│   │   └── [✅] SceneAnimationState — global trong Scene
+│   ├── Keyframe Editing
+│   │   ├── [✅] Set keyframe
+│   │   ├── [✅] Delete keyframe
+│   │   ├── [✅] Delete keyframes in range
+│   │   ├── [✅] Duplicate keyframe
+│   │   ├── [✅] Shift keyframes ±n
+│   │   ├── [✅] Shift keyframes in range
+│   │   └── [✅] Scale all keyframes
+│   ├── Playback
+│   │   ├── [✅] Timer-based playback (QTimer)
+│   │   ├── [✅] Toggle play / pause
+│   │   ├── [✅] Step frame ±1
+│   │   ├── [✅] Jump to prev / next keyframe
+│   │   ├── [✅] Playback range (start / end frame)
+│   │   ├── [✅] Visible frame range (tách khỏi playback range)
+│   │   └── [✅] FPS setting (default 24)
+│   ├── Auto Key
+│   │   └── [✅] Auto Key mode — tự set key khi transform thay đổi
+│   ├── Timeline UI
+│   │   ├── [✅] AnimationTimelinePanel
+│   │   ├── [✅] KeyframeTimelineWidget — scrub + markers
+│   │   ├── [✅] Frame range drag-select
+│   │   ├── [✅] Set / Delete / Duplicate key buttons
+│   │   ├── [✅] Shift keys ±1 buttons
+│   │   ├── [✅] Prev / Next key navigation
+│   │   ├── [✅] Auto Key toggle button
+│   │   └── [✅] Status label feedback
+│   ├── Range Slider
+│   │   ├── [✅] RangeSliderPanel
+│   │   ├── [✅] Playback range handles
+│   │   └── [✅] Visible frame range
+│   └── Graph Editor
+│       ├── [🚧] GraphEditorPanel — UI shell có
+│       ├── [🚧] GraphEditorViewModel
+│       └── [❌] Curve editing / easing interpolation
+│
+├── 🦴 Rigging
+│   ├── Joint
+│   │   ├── [✅] Create Joint (Kind::Joint SceneObject)
+│   │   ├── [✅] Joint hierarchy — parent / unparent
+│   │   ├── [✅] Mark hierarchy parent (markedHierarchyParentId_)
+│   │   ├── [✅] Joint orientation — set (Euler → QQuaternion)
+│   │   ├── [✅] Reset joint orientation
+│   │   └── [✅] Align orientation to child joint
+│   ├── Bind Pose
+│   │   ├── [✅] Capture Bind Pose (single)
+│   │   └── [✅] Capture Bind Pose (recursive)
+│   ├── Skin Binding
+│   │   ├── [✅] Bind mesh → skeleton (auto-weight)
+│   │   ├── [✅] Manual SkinWeightTable per mesh
+│   │   ├── [✅] Clear skin binding
+│   │   └── [✅] Linear Blend Skinning (buildDeformedMesh)
+│   ├── [❌] Weight painting UI
+│   └── [❌] IK solver (FK only hiện tại)
+│
+├── 🖥 Viewport & Rendering
+│   ├── Renderer
+│   │   ├── [✅] OpenGL 3.3 Core Profile
+│   │   ├── [✅] Double-buffered, depth 24 + stencil 8
+│   │   ├── [✅] Scene geometry VAO
+│   │   ├── [✅] Imported mesh VAO (+ preview VAO)
+│   │   ├── [✅] Joint geometry VAO
+│   │   ├── [✅] Selection bounds VAO (AABB outline)
+│   │   ├── [✅] Gizmo VAO
+│   │   ├── [✅] Grid + axis lines
+│   │   ├── [✅] syncScene — upload từ scene snapshot
+│   │   ├── [✅] setPreviewScene — preview trước khi commit import
+│   │   ├── [❌] PBR / texture shading
+│   │   └── [❌] Shadow
+│   ├── Camera
+│   │   ├── [✅] Orbit camera (yaw / pitch / distance / target)
+│   │   ├── [✅] Perspective projection (FOV 45° default)
+│   │   ├── [✅] Orthographic projection
+│   │   ├── [✅] 7 view presets (Persp/Front/Back/Left/Right/Top/Bottom)
+│   │   ├── [✅] Frame selected — frameBounds(center, radius)
+│   │   ├── [✅] Frame entire scene
+│   │   ├── [✅] Pan / Zoom (scroll)
+│   │   └── [✅] Zoom sensitivity setting
+│   ├── Display Options
+│   │   ├── [✅] Wireframe mode
+│   │   ├── [✅] Backface culling
+│   │   ├── [✅] World axis display
+│   │   └── [✅] Selection outline
+│   └── Workspace
+│       ├── [✅] Single viewport
+│       ├── [✅] Quad view (Space toggle)
+│       ├── [✅] Active viewport tracking
+│       └── [✅] ViewportRenderSync
+│
+├── ✥ Gizmos
+│   ├── Translate Gizmo
+│   │   ├── [✅] TranslateGizmoGeometry — build vertices
+│   │   ├── [✅] TranslateGizmoInteraction — hit test
+│   │   └── [✅] TranslateGizmoDrag — drag delta → transform
+│   ├── Rotate Gizmo
+│   │   ├── [✅] RotateGizmoGeometry
+│   │   ├── [✅] RotateGizmoInteraction
+│   │   └── [✅] RotateGizmoDrag
+│   ├── Scale Gizmo
+│   │   ├── [✅] ScaleGizmoGeometry
+│   │   ├── [✅] ScaleGizmoInteraction
+│   │   └── [✅] ScaleGizmoDrag
+│   ├── [✅] World / Local orientation switch
+│   ├── [✅] Active axis highlight
+│   ├── [❌] Grid snapping
+│   └── [❌] Angle snapping
+│
+├── 💾 I/O
+│   ├── [✅] .phoenixscene — native format (save / load)
+│   ├── FBX Import
+│   │   ├── [✅] FbxImporter (via assimp)
+│   │   ├── [✅] FbxSceneBuilder
+│   │   ├── [✅] FbxImportValidation
+│   │   └── [✅] FbxImportMessages — user-facing errors
+│   ├── [✅] AssimpSceneDocument — generic assimp load
+│   ├── [✅] Increment & Save (auto version suffix)
+│   ├── [✅] Archive Scene
+│   ├── [✅] Export All / Export Selection
+│   ├── [❌] FBX export
+│   ├── [❌] USD / glTF
+│   └── [📋] OBJ import (assimp sẵn, chưa wire)
+│
+├── 📜 Script Command System (MEL-like)
+│   ├── Object Commands
+│   │   ├── [✅] select -cl / select <name>
+│   │   ├── [✅] polyCube -w -h -d  (và các primitive khác)
+│   │   ├── [✅] rename <old> <new>
+│   │   ├── [✅] duplicate <name>
+│   │   ├── [✅] group <name>
+│   │   ├── [✅] delete <name>
+│   │   ├── [✅] parent <child> <parent>
+│   │   └── [✅] unparent <child>
+│   ├── Attribute Commands
+│   │   └── [✅] setAttr "obj.attr" val val val
+│   ├── Animation Commands
+│   │   ├── [✅] currentTime <frame>
+│   │   ├── [✅] playbackOptions -min N -max N
+│   │   ├── [✅] play -state on|off
+│   │   ├── [✅] autoKeyframe -state on|off
+│   │   ├── [✅] setKeyframe <obj> -t <frame>
+│   │   ├── [✅] cutKey <obj> -t <frame>
+│   │   ├── [✅] copyKey <obj> -t <src> -to <dst>
+│   │   └── [✅] shiftKey <obj> -by <n>
+│   ├── Rig Commands
+│   │   ├── [✅] joint -name <name>
+│   │   ├── [✅] jointOrient <obj> -euler x y z
+│   │   ├── [✅] jointOrient -reset <obj>
+│   │   ├── [✅] jointOrient <obj> -alignToChild
+│   │   ├── [✅] bindPose -capture [-recursive] <obj>
+│   │   └── [✅] bindSkin <mesh> <joint>
+│   ├── View / Tool Commands
+│   │   ├── [✅] setToolTo <toolName>
+│   │   ├── [✅] viewFit <name>
+│   │   └── [✅] viewSet -home
+│   └── File Commands
+│       ├── [✅] file -f -new
+│       ├── [✅] file -o "<path>"
+│       ├── [✅] file -save "<path>"
+│       └── [✅] file -import "<path>"
+│
+├── 🖱 Editor Shell & UI
+│   ├── Panels
+│   │   ├── [✅] Outliner (QTreeWidget)
+│   │   ├── [✅] Drag-to-reparent trong outliner
+│   │   ├── [✅] Channel Box — spinboxes T/R/S per axis
+│   │   ├── [✅] Visibility toggle checkbox
+│   │   ├── [✅] Inspector — joint orientation + bind pose UI
+│   │   ├── [✅] Primitive Palette (QListWidget)
+│   │   ├── [✅] Script Editor (history + input QPlainTextEdit)
+│   │   └── [🚧] Rig Panel — dock có, content chưa rõ
+│   ├── Workspace
+│   │   ├── [✅] WorkspaceManager — bọc QDockWidget engine
+│   │   ├── [✅] Preset: Default
+│   │   ├── [✅] Preset: Animation
+│   │   ├── [✅] Preset: Rigging
+│   │   └── [🚧] User layout save / restore / delete
+│   ├── Undo / Redo
+│   │   ├── [✅] EditorHistoryController — clone Scene snapshots
+│   │   └── [📋] Unlimited undo stack
+│   ├── Menus
+│   │   ├── [✅] File — New/Open/Import/Save/SaveAs/Increment/Archive/Export
+│   │   ├── [✅] Edit — Undo / Redo
+│   │   ├── [✅] Create — Primitives / Joint
+│   │   ├── [✅] Rig — Orient / Bind Pose / Skin / Parent
+│   │   ├── [✅] Animation — Key / Delete / Dup / Shift / Nav
+│   │   ├── [✅] View — Camera presets / Wireframe / Axis / Backface
+│   │   ├── [✅] Windows — Script Editor / Graph Editor / Workspace
+│   │   └── [✅] Transform — Translate / Rotate / Scale / World / Local
+│   ├── Toolbar
+│   │   ├── [✅] Import & Create section
+│   │   ├── [✅] Rig section
+│   │   ├── [✅] View section
+│   │   ├── [✅] Transform section
+│   │   └── [✅] Display section
+│   └── Misc
+│       ├── [✅] Maya-like shortcuts (P / Shift+P)
+│       ├── [✅] Preferences save/load (QSettings)
+│       ├── [✅] Window title update (show file path)
+│       ├── [✅] Status bar messages (với timeout)
+│       ├── [✅] Script log echo (comment + command + result)
+│       └── [✅] File logging (stderr + phoenix_editor.log)
+│
+└── 🧪 Tests (Qt Test)
+    ├── Integration (full EditorShell)
+    │   ├── [✅] createCubeUpdatesOutlinerAndChannelBox
+    │   ├── [✅] restoreDefaultLayoutResetsFloatingDocks
+    │   ├── [✅] transformToolbarUpdatesViewportToolState
+    │   ├── [✅] viewMenuSwitchesViewportCameraPresets
+    │   ├── [✅] spaceTogglesQuadViewAndMaximizesActiveViewport
+    │   ├── [✅] editMenuUndoRedoRestoresCreatedPrimitive
+    │   ├── [✅] scriptEditorExecutesPrimitiveCommand
+    │   ├── [✅] hierarchyActionsParentAndUnparentJoints
+    │   ├── [✅] bindSkinActionBindsMeshToMarkedJoint
+    │   ├── [✅] leftMouseDragReparentsOutlinerItems
+    │   ├── [✅] jointInspectorEditsOrientationAndCapturesBindPose
+    │   ├── [✅] timelineUiShowsKeyframeFeedback
+    │   └── [✅] timelineUiSupportsFrameRangeSelection
+    └── Unit (controller / registry)
+        ├── [✅] scriptEditorLogsChannelBoxChanges
+        ├── [✅] scriptEditorExecutesTimelineCommands
+        ├── [✅] scriptEditorExecutesObjectCommands
+        ├── [✅] scriptEditorExecutesViewToolAndFileCommands
+        ├── [✅] scriptEditorExecutesSceneFileCommands
+        ├── [✅] scriptCommandRegistry — FileImport
+        ├── [✅] scriptCommandRegistry — SetKeyframe
+        ├── [✅] scriptCommandRegistry — DeleteKey
+        ├── [✅] scriptCommandRegistry — CopyKey + ShiftKey
+        ├── [✅] scriptCommandRegistry — AutoKey
+        ├── [✅] scriptCommandRegistry — JointHierarchy
+        ├── [✅] scriptCommandRegistry — JointOrient + BindPose
+        ├── [✅] scriptCommandRegistry — BindSkin
+        ├── [✅] hierarchyActionsExposeMayaLikeShortcuts
+        ├── [✅] playbackControllerRoutesTimeIntentsAndTicks
+        ├── [✅] animationEngineFacadeAppliesKeyEditsAndScriptBindings
+        ├── [✅] sceneRuntimeControllerAppliesSceneFrameAndSelection
+        ├── [✅] viewportSceneControllerRoutesSceneMutations
+        └── [✅] SceneTransformTests
