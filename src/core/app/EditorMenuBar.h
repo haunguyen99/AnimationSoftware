@@ -159,8 +159,8 @@ public:
         std::function<void()> showGraphEditor;
         // Workspace — pointer needed to sync preset checkmarks via signal
         WorkspaceManager* workspaceManager = nullptr;
-        std::function<void()>              saveWorkspaceLayout;
-        std::function<void()>              deleteWorkspaceLayout;
+        std::function<void(const QString&)> saveWorkspaceLayout;
+        std::function<void(const QString&)> deleteWorkspaceLayout;
         std::function<QStringList()>       userLayoutNames;
         std::function<void(const QString&)> restoreUserLayout;
         // Status bar message (for layout save/delete confirmations)
@@ -174,6 +174,10 @@ public:
 
     Actions&       actions()       { return actions_; }
     const Actions& actions() const { return actions_; }
+
+    // Rebuild the user-layout entries in the Workspace menu.
+    // Call after saveUserLayout or deleteUserLayout so the menu stays in sync.
+    void refreshUserLayoutMenu();
 
 private:
     void buildFileMenu(const Bindings& b);

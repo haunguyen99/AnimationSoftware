@@ -2,6 +2,7 @@
 
 class QMainWindow;
 class QToolBar;
+class QToolButton;
 
 #include "EditorMenuBar.h"
 
@@ -11,5 +12,13 @@ class QToolBar;
 
 namespace EditorToolBar
 {
-QToolBar* build(QMainWindow* mainWindow, const EditorMenuBar::Actions& actions);
-}
+
+struct BuildResult
+{
+    QToolBar*   toolbar      = nullptr;
+    QToolButton* presetButton = nullptr; // right-aligned Unity-style preset dropdown; owned by toolbar
+};
+
+BuildResult build(QMainWindow* mainWindow, const EditorMenuBar::Actions& actions);
+
+} // namespace EditorToolBar

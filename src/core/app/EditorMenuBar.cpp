@@ -382,15 +382,13 @@ void EditorMenuBar::openSaveLayoutDialog()
     }
     const QString trimmed = name.trimmed();
     if (bindings_.saveWorkspaceLayout) {
-        bindings_.saveWorkspaceLayout();
+        bindings_.saveWorkspaceLayout(trimmed);
     }
-    // Delegate actual save + status message through bindings so WorkspaceManager
-    // is called from EditorShell's own context (which holds the named layout).
-    // For now, fire the generic callback; EditorShell should wire it to
-    // workspaceManager_->saveUserLayout(trimmed) + statusBar message.
-    if (bindings_.showStatusMessage) {
-        bindings_.showStatusMessage(QString("Layout '%1' saved").arg(trimmed), 2000);
-    }
+}
+
+void EditorMenuBar::refreshUserLayoutMenu()
+{
+    rebuildUserLayoutActions();
 }
 
 void EditorMenuBar::openDeleteLayoutDialog()
@@ -406,9 +404,6 @@ void EditorMenuBar::openDeleteLayoutDialog()
         return;
     }
     if (bindings_.deleteWorkspaceLayout) {
-        bindings_.deleteWorkspaceLayout();
-    }
-    if (bindings_.showStatusMessage) {
-        bindings_.showStatusMessage(QString("Layout '%1' deleted").arg(name), 2000);
+        bindings_.deleteWorkspaceLayout(name);
     }
 }

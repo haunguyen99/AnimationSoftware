@@ -28,12 +28,15 @@
 #include <QStatusBar>
 #include <QStyle>
 #include <QToolBar>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
 #include <QTreeWidgetItem>
 #include <QHBoxLayout>
 #include <QFrame>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 #include "AnimationTimelinePanel.h"
 #include "animation/editor/EditorAnimationFlowController.h"
@@ -234,13 +237,30 @@ EditorShell::EditorShell()
         .showScriptEditor           = [this]() { showScriptEditorWindow(); },
         .showGraphEditor            = [this]() { showGraphEditorWindow(); },
         .workspaceManager           = workspaceManager_,
-        .saveWorkspaceLayout        = [this]() { workspaceManager_->saveUserLayout(QString()); },
-        .deleteWorkspaceLayout      = [this]() { workspaceManager_->deleteUserLayout(QString()); },
+        .saveWorkspaceLayout        = [this](const QString& name) {
+            workspaceManager_->saveUserLayout(name);
+            statusBar()->showMessage(QString("Layout '%1' saved").arg(name), 2000);
+            editorMenuBar_->refreshUserLayoutMenu();
+        },
+        .deleteWorkspaceLayout      = [this](const QString& name) {
+            workspaceManager_->deleteUserLayout(name);
+            statusBar()->showMessage(QString("Layout '%1' deleted").arg(name), 2000);
+            editorMenuBar_->refreshUserLayoutMenu();
+        },
         .userLayoutNames            = [this]() { return workspaceManager_->userLayoutNames(); },
         .restoreUserLayout          = [this](const QString& name) { workspaceManager_->restoreUserLayout(name); },
         .showStatusMessage          = [this](const QString& msg, int ms) { statusBar()->showMessage(msg, ms); },
     });
-    toolbar_ = EditorToolBar::build(this, editorMenuBar_->actions());
+    {
+        auto result = EditorToolBar::build(this, editorMenuBar_->actions());
+        toolbar_ = result.toolbar;
+        if (result.presetButton != nullptr) {
+            connect(workspaceManager_, &WorkspaceManager::activePresetChanged,
+                    this, [btn = result.presetButton](const QString& name) {
+                        btn->setText(name);
+                    });
+        }
+    }
 
     createDocks();
     activePanelStatusLabel_ = new QLabel(this);
@@ -876,11 +896,21 @@ QWidget* EditorShell::createCommandLinePanel()
 QWidget* EditorShell::createGraphEditorPanel()
 {
     graphEditorPanel_ = new GraphEditorPanel(this);
+    graphEditorPanel_->setObjectName("graphEditorPanel");
     graphEditorPanel_->setViewModel(buildGraphEditorViewModel());
     graphEditorPanel_->setCurrentFrameChangedCallback([this](int frame) {
         if (!updatingTimeSlider_) {
             playbackController_.setCurrentFrame(frame);
         }
+    });
+    graphEditorPanel_->setKeyEditedCallback([this](const GraphEditorKeyEdit& edit) {
+        handleGraphEditorKeyEdited(edit);
+    });
+    graphEditorPanel_->setTangentEditedCallback([this](const TangentEdit& edit) {
+        handleGraphEditorTangentEdited(edit);
+    });
+    graphEditorPanel_->setTangentModeChangedCallback([this](const TangentModeChange& change) {
+        handleGraphEditorTangentModeChanged(change);
     });
     return graphEditorPanel_;
 }
@@ -1623,6 +1653,168 @@ void EditorShell::updateUndoRedoActions()
     }
 }
 
+// ---------------------------------------------------------------------------
+// Graph Editor handlers (Phase 2 / 3 / 4)
+// ---------------------------------------------------------------------------
+
+namespace
+{
+// Find index in track where kf.frame == frame; returns -1 if not found.
+int findKeyframeIndex(const TransformKeyframeTrack& track, int frame)
+{
+    for (int i = 0; i < track.size(); ++i) {
+        if (track[i].frame == frame) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// Patch one channel of a Transform in-place by curveId / newValue.
+void patchTransformChannel(Transform& t, const QString& curveId, double newValue)
+{
+    if (curveId == "tx") {
+        t.translation.setX(static_cast<float>(newValue));
+    } else if (curveId == "ty") {
+        t.translation.setY(static_cast<float>(newValue));
+    } else if (curveId == "tz") {
+        t.translation.setZ(static_cast<float>(newValue));
+    } else if (curveId == "rx") {
+        QVector3D e = t.rotation.toEulerAngles();
+        e.setX(static_cast<float>(newValue));
+        t.rotation = QQuaternion::fromEulerAngles(e);
+    } else if (curveId == "ry") {
+        QVector3D e = t.rotation.toEulerAngles();
+        e.setY(static_cast<float>(newValue));
+        t.rotation = QQuaternion::fromEulerAngles(e);
+    } else if (curveId == "rz") {
+        QVector3D e = t.rotation.toEulerAngles();
+        e.setZ(static_cast<float>(newValue));
+        t.rotation = QQuaternion::fromEulerAngles(e);
+    } else if (curveId == "sx") {
+        t.scale.setX(static_cast<float>(newValue));
+    } else if (curveId == "sy") {
+        t.scale.setY(static_cast<float>(newValue));
+    } else if (curveId == "sz") {
+        t.scale.setZ(static_cast<float>(newValue));
+    }
+}
+} // namespace
+
+void EditorShell::handleGraphEditorKeyEdited(const GraphEditorKeyEdit& edit)
+{
+    if (selectedObjectId_ == 0) {
+        return;
+    }
+
+    Scene scene = viewport_->sceneSnapshot();
+    SceneObject* object = scene.findObject(selectedObjectId_);
+    if (object == nullptr) {
+        return;
+    }
+
+    TransformKeyframeTrack track = object->transformKeyframes();
+    const int idx = findKeyframeIndex(track, edit.oldFrame);
+    if (idx < 0) {
+        return;
+    }
+
+    // Patch channel value and move to new frame
+    patchTransformChannel(track[idx].transform, edit.curveId, edit.newValue);
+    track[idx].frame = edit.newFrame;
+
+    // Re-sort if frame changed
+    if (edit.oldFrame != edit.newFrame) {
+        std::sort(track.begin(), track.end(), [](const TransformKeyframe& a, const TransformKeyframe& b) {
+            return a.frame < b.frame;
+        });
+    }
+
+    object->setTransformKeyframes(track);
+
+    EditorSceneRuntimeController::ApplySceneRequest request;
+    request.scene = scene;
+    request.recordUndo = true;
+    request.applyCurrentFrame = true;
+    request.currentFrame = edit.newFrame;
+    request.selection.objectId = selectedObjectId_;
+    EditorSceneRuntimeController::applyScene(sceneRuntimeContext(), request);
+}
+
+void EditorShell::handleGraphEditorTangentEdited(const TangentEdit& edit)
+{
+    if (selectedObjectId_ == 0) {
+        return;
+    }
+
+    Scene scene = viewport_->sceneSnapshot();
+    SceneObject* object = scene.findObject(selectedObjectId_);
+    if (object == nullptr) {
+        return;
+    }
+
+    TransformKeyframeTrack track = object->transformKeyframes();
+    const int idx = findKeyframeIndex(track, edit.frame);
+    if (idx < 0) {
+        return;
+    }
+
+    if (edit.isInHandle) {
+        track[idx].tangent.inAngle = edit.newAngle;
+        if (track[idx].tangent.mode == TangentMode::Auto) {
+            track[idx].tangent.mode = TangentMode::Broken;
+        }
+    } else {
+        track[idx].tangent.outAngle = edit.newAngle;
+        if (track[idx].tangent.mode == TangentMode::Auto) {
+            track[idx].tangent.mode = TangentMode::Broken;
+        }
+    }
+
+    object->setTransformKeyframes(track);
+
+    EditorSceneRuntimeController::ApplySceneRequest request;
+    request.scene = scene;
+    request.recordUndo = true;
+    request.selection.objectId = selectedObjectId_;
+    EditorSceneRuntimeController::applyScene(sceneRuntimeContext(), request);
+}
+
+void EditorShell::handleGraphEditorTangentModeChanged(const TangentModeChange& change)
+{
+    if (selectedObjectId_ == 0) {
+        return;
+    }
+
+    Scene scene = viewport_->sceneSnapshot();
+    SceneObject* object = scene.findObject(selectedObjectId_);
+    if (object == nullptr) {
+        return;
+    }
+
+    TransformKeyframeTrack track = object->transformKeyframes();
+    const int idx = findKeyframeIndex(track, change.frame);
+    if (idx < 0) {
+        return;
+    }
+
+    track[idx].tangent.mode = change.newMode;
+    if (change.newMode == TangentMode::Flat) {
+        track[idx].tangent.inAngle = 0.f;
+        track[idx].tangent.outAngle = 0.f;
+    }
+
+    object->setTransformKeyframes(track);
+
+    EditorSceneRuntimeController::ApplySceneRequest request;
+    request.scene = scene;
+    request.recordUndo = true;
+    request.selection.objectId = selectedObjectId_;
+    EditorSceneRuntimeController::applyScene(sceneRuntimeContext(), request);
+}
+
+// ---------------------------------------------------------------------------
+
 void EditorShell::populateOutliner()
 {
     EditorOutlinerController::populateTree(outlinerTree_, outlinerSceneAccess());
@@ -1741,9 +1933,16 @@ GraphEditorViewModel EditorShell::buildGraphEditorViewModel() const
 
     const auto buildPoints = [object](auto valueFn) {
         QVector<GraphEditorCurvePoint> points;
-        points.reserve(object->transformKeyframes().size());
-        for (const TransformKeyframe& keyframe : object->transformKeyframes()) {
-            points.append({ keyframe.frame, valueFn(keyframe) });
+        const TransformKeyframeTrack& track = object->transformKeyframes();
+        points.reserve(track.size());
+        for (const TransformKeyframe& keyframe : track) {
+            GraphEditorCurvePoint pt;
+            pt.frame = keyframe.frame;
+            pt.value = valueFn(keyframe);
+            pt.inAngle = keyframe.tangent.inAngle;
+            pt.outAngle = keyframe.tangent.outAngle;
+            pt.tangentMode = keyframe.tangent.mode;
+            points.append(pt);
         }
         return points;
     };
