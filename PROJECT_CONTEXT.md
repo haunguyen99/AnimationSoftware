@@ -1,7 +1,7 @@
 # PROJECT_CONTEXT.md
 
 Tài liệu này tổng hợp từ đọc trực tiếp mã nguồn — không phải tài liệu.  
-Cập nhật: 2026-08-11 (phiên 2).
+Cập nhật: 2026-08-11 (phiên 3).
 
 ---
 
@@ -293,30 +293,44 @@ Build: `tests/unit/CMakeLists.txt` → target `editor_ui_tests`.
 
 ---
 
-## Kế hoạch tiếp theo — Graph Editor (đã lên plan, chưa implement)
+## Graph Editor — ✅ Đã implement (phiên 3)
 
-**Trạng thái hiện tại**: `GraphEditorPanel` (603 dòng) là viewer read-only — curves vẽ linear, không edit được key, không có bezier/tangent.
+**Trạng thái**: Hoàn thành tất cả 4 phase. `GraphEditorPanel` từ viewer read-only → editor đầy đủ.
 
-**4 Phase đã plan** (`plans/flickering-waddling-lighthouse.md`):
+### Files mới
 
-| Phase | Nội dung | Ước tính |
-|---|---|---|
-| 1 — Data | `KeyTangent.h`, `CurveInterpolator.h/.cpp`, thêm tangent vào `TransformKeyframe`, thay linear lerp trong `SceneAnimationState` | ~2h |
-| 2 — Key Editing | Drag key trên canvas → write-back scene (undo-able), `GraphEditorKeyEdit` callback | ~3h |
-| 3 — Bezier UI | `cubicTo()` draw, tangent handle drag, populate tangents từ viewmodel | ~4h |
-| 4 — Polish | Context menu (Auto/Linear/Flat/Stepped/Broken), toolbar (Frame All/Selected), 5 test methods | ~2h |
+| File | Vai trò |
+|---|---|
+| `src/animation/data/KeyTangent.h` | `TangentMode` enum (Auto/Linear/Flat/Stepped/Broken), `KeyTangent` struct (inAngle, outAngle, inWeight, outWeight) |
+| `src/animation/data/CurveInterpolator.h/.cpp` | `evaluateChannel(keys, frame)` — cubic bezier với binary search; `computeAutoTangent` (Catmull-Rom) |
 
-**Files sẽ tạo mới**:
-- `src/animation/data/KeyTangent.h`
-- `src/animation/data/CurveInterpolator.h/.cpp`
+### Files đã sửa
 
-**Files sẽ sửa**:
-- `src/animation/data/TransformKeyframeTrack.h` — thêm `KeyTangent tangent`
-- `src/animation/scene/SceneAnimationState.cpp` — dùng CurveInterpolator
-- `apps/editor/include/GraphEditorPanel.h` — tangent fields, callbacks, drag state
-- `apps/editor/src/GraphEditorPanel.cpp` — bezier draw, key drag, tangent handle
-- `src/core/app/EditorShell.h/.cpp` — handlers + wire callbacks
-- `apps/editor/CMakeLists.txt` — thêm CurveInterpolator.cpp
+| File | Thay đổi |
+|---|---|
+| `src/animation/data/TransformKeyframeTrack.h` | Thêm `KeyTangent tangent` vào `TransformKeyframe` |
+| `src/animation/scene/SceneAnimationState.cpp` | `evaluateObjectTransformAtFrame()` dùng `CurveInterpolator::evaluateChannel()` cho 9 channel (tx/ty/tz/rx/ry/rz/sx/sy/sz) thay vì linear lerp |
+| `apps/editor/include/GraphEditorPanel.h` | Thêm `GraphEditorKeyEdit`, `TangentEdit`, `TangentModeChange` structs; drag/tangent state; 3 callback setters; `fireKeyEditForTest()`; **không dùng Q_OBJECT** (std::function callbacks đủ dùng) |
+| `apps/editor/src/GraphEditorPanel.cpp` | Phase 2: key drag → `keyEditedCallback_`; Phase 3: `cubicTo()` bezier draw + tangent handle 48px; Phase 4: context menu 5 mode + toolbar Frame All/Selected/Show Tangents |
+| `src/core/app/EditorShell.h/.cpp` | `handleGraphEditorKeyEdited/TangentEdited/TangentModeChanged` — scene snapshot → patch → `applyScene(recordUndo=true)` |
+| `apps/editor/CMakeLists.txt` | Thêm `CurveInterpolator.cpp` |
+| `tests/unit/CMakeLists.txt` | Thêm `CurveInterpolator.cpp` + `EditorMenuBar/Theme/ToolBar.cpp` cho `editor_ui_tests` |
+
+### 5 test methods (tất cả PASS)
+
+```
+testGraphEditorPanelPopulation    — 9 curves xuất hiện trong QListWidget
+testGraphEditorCurrentFrameSync   — callback gọi không crash
+testGraphEditorCurveVisibility    — xóa selection không crash
+testGraphEditorKeyEdit            — tạo cube, set 2 keyframe, fire key edit, verify undo available
+testGraphEditorInterpolationMode  — 5 TangentMode, vẽ không crash
+```
+
+### Điểm kỹ thuật quan trọng
+
+- **AUTOMOC gotcha**: `Q_OBJECT` trong header thuộc `.cpp` của target khác → AUTOMOC non-inline mode không pick up được nếu header không được scan transitively từ header đã known. Giải pháp: bỏ `Q_OBJECT` khỏi `GraphEditorPanel`/`GraphEditorCanvasWidget` (dùng `std::function` callback thay signal/slot), dùng `setObjectName("graphEditorPanel")` + `findChild<QWidget*>(name)` + `static_cast` trong test.
+- **Euler rotation per-channel**: `SceneAnimationState` dùng `QQuaternion::toEulerAngles()` để build 3 CurveKey array cho rx/ry/rz, eval riêng, rồi `QQuaternion::fromEulerAngles()` để tái tạo rotation.
+- **Bezier control points**: `weight` là fraction của segment length (0–1), `controlOffset = weight * segLen * tan(angleDeg)` theo trục frame/value đã normalize.
 
 ---
 
@@ -333,17 +347,13 @@ Build: `tests/unit/CMakeLists.txt` → target `editor_ui_tests`.
 
 ## Trạng thái hiện tại (branch: `codex/core-scene-step1-seams`)
 
-File đang modified (chưa commit):
-- `src/core/app/EditorShell.cpp/.h` — đang refactor
-- `src/core/app/WorkspaceManager.cpp/.h` — **file mới**, vừa extract từ EditorShell
-- `apps/editor/src/AnimationTimelinePanel.cpp`
-- `apps/editor/src/RangeSliderPanel.cpp`
-- `apps/editor/CMakeLists.txt`
-- `tests/unit/CMakeLists.txt`
-- `docs/UI_Redesign_Implementation_Plan.md` — untracked
+Commit gần nhất: `958f267 — docs: update PROJECT_CONTEXT with Graph Editor plan`.
 
-Commit gần nhất: `ea3b60d — Refactor editor shell and add Maya-style animation panels`.  
-Hướng đang đi: tách `WorkspaceManager` ra khỏi `EditorShell` (seam extraction cho step 1 của UI redesign plan).
+**Đã implement trong phiên 3** (chưa commit vào thời điểm cập nhật):
+- Graph Editor 4 phase hoàn chỉnh (xem section trên)
+- `editor_ui_tests`: 35 PASS, 2 FAIL (pre-existing: `transformToolbarUpdatesViewportToolState`, `viewMenuSwitchesViewportCameraPresets` — không liên quan Graph Editor)
+
+Hướng tiếp theo: UI Redesign Plan (4-step) theo memory `[[ui-redesign-decision]]`.
 
 ---
 

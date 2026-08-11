@@ -1,15 +1,18 @@
 #include "GraphEditorPanel.h"
 
+#include <QAction>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPen>
 #include <QSignalBlocker>
 #include <QSizePolicy>
+#include <QToolBar>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
@@ -17,11 +20,12 @@
 
 namespace
 {
-constexpr int kCanvasMarginLeft = 44;
-constexpr int kCanvasMarginRight = 18;
-constexpr int kCanvasMarginTop = 16;
+constexpr int kCanvasMarginLeft   = 44;
+constexpr int kCanvasMarginRight  = 18;
+constexpr int kCanvasMarginTop    = 16;
 constexpr int kCanvasMarginBottom = 24;
-constexpr qreal kKeyHitRadius = 9.0;
+constexpr qreal kKeyHitRadius        = 9.0;
+constexpr qreal kTangentHandleLength = 48.0; // pixels
 
 QColor gridColor()
 {
@@ -32,7 +36,11 @@ QColor mutedTextColor()
 {
     return QColor("#8f9aa6");
 }
-}
+} // namespace
+
+// ---------------------------------------------------------------------------
+// GraphEditorCanvasWidget
+// ---------------------------------------------------------------------------
 
 GraphEditorCanvasWidget::GraphEditorCanvasWidget(QWidget* parent)
     : QWidget(parent)
@@ -40,6 +48,7 @@ GraphEditorCanvasWidget::GraphEditorCanvasWidget(QWidget* parent)
     setMinimumHeight(120);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setMouseTracking(true);
+    setContextMenuPolicy(Qt::DefaultContextMenu);
 }
 
 void GraphEditorCanvasWidget::setViewModel(const GraphEditorViewModel& viewModel, const QVector<QString>& visibleCurveIds)
@@ -70,6 +79,96 @@ void GraphEditorCanvasWidget::setCurrentFrameChangedCallback(std::function<void(
 {
     currentFrameChangedCallback_ = std::move(callback);
 }
+
+void GraphEditorCanvasWidget::setKeyEditedCallback(std::function<void(const GraphEditorKeyEdit&)> callback)
+{
+    keyEditedCallback_ = std::move(callback);
+}
+
+void GraphEditorCanvasWidget::setTangentEditedCallback(std::function<void(const TangentEdit&)> callback)
+{
+    tangentEditedCallback_ = std::move(callback);
+}
+
+void GraphEditorCanvasWidget::setTangentModeChangedCallback(std::function<void(const TangentModeChange&)> callback)
+{
+    tangentModeChangedCallback_ = std::move(callback);
+}
+
+void GraphEditorCanvasWidget::setShowTangents(bool show)
+{
+    showTangents_ = show;
+    update();
+}
+
+void GraphEditorCanvasWidget::fireKeyEditForTest(const GraphEditorKeyEdit& edit)
+{
+    if (keyEditedCallback_) {
+        keyEditedCallback_(edit);
+    }
+}
+
+void GraphEditorCanvasWidget::frameAll()
+{
+    hasCustomFrameView_ = false;
+    hasCustomValueView_ = false;
+    frameViewStart_ = viewModel_.visibleStartFrame;
+    frameViewEnd_ = qMax(viewModel_.visibleStartFrame + 1, viewModel_.visibleEndFrame);
+    fitValueRangeToVisibleCurves();
+    update();
+}
+
+void GraphEditorCanvasWidget::frameSelected()
+{
+    if (selectedKeys_.isEmpty()) {
+        frameAll();
+        return;
+    }
+
+    int minFrame = INT_MAX;
+    int maxFrame = INT_MIN;
+    double minValue = 1e18;
+    double maxValue = -1e18;
+    bool found = false;
+
+    for (const SelectedKey& sel : selectedKeys_) {
+        for (const GraphEditorCurve& curve : viewModel_.curves) {
+            if (curve.id != sel.curveId) {
+                continue;
+            }
+            for (const GraphEditorCurvePoint& pt : curve.points) {
+                if (pt.frame == sel.frame && qAbs(pt.value - sel.value) < 0.0001) {
+                    minFrame = qMin(minFrame, pt.frame);
+                    maxFrame = qMax(maxFrame, pt.frame);
+                    minValue = qMin(minValue, pt.value);
+                    maxValue = qMax(maxValue, pt.value);
+                    found = true;
+                }
+            }
+        }
+    }
+
+    if (!found) {
+        frameAll();
+        return;
+    }
+
+    const int framePad = qMax(2, (maxFrame - minFrame) / 4 + 2);
+    frameViewStart_ = minFrame - framePad;
+    frameViewEnd_ = maxFrame + framePad;
+
+    const double valuePad = qMax(0.5, (maxValue - minValue) * 0.25 + 0.5);
+    valueViewMin_ = minValue - valuePad;
+    valueViewMax_ = maxValue + valuePad;
+    hasCustomFrameView_ = true;
+    hasCustomValueView_ = true;
+    ensureViewRanges();
+    update();
+}
+
+// ---------------------------------------------------------------------------
+// paintEvent
+// ---------------------------------------------------------------------------
 
 void GraphEditorCanvasWidget::paintEvent(QPaintEvent* event)
 {
@@ -102,9 +201,9 @@ void GraphEditorCanvasWidget::paintEvent(QPaintEvent* event)
         painter.drawText(QRectF(x - 18.0, plotRect.bottom() + 4.0, 36.0, 16.0), Qt::AlignCenter, QString::number(frame));
     }
 
-    const QVector<const GraphEditorCurve*> visibleCurves = this->visibleCurves();
+    const QVector<const GraphEditorCurve*> visCurves = this->visibleCurves();
 
-    if (visibleCurves.isEmpty()) {
+    if (visCurves.isEmpty()) {
         painter.setPen(mutedTextColor());
         painter.drawText(plotRect, Qt::AlignCenter, "No visible curves");
     } else {
@@ -112,34 +211,96 @@ void GraphEditorCanvasWidget::paintEvent(QPaintEvent* event)
         painter.drawText(QRectF(4.0, plotRect.top() - 4.0, 34.0, 16.0), Qt::AlignRight | Qt::AlignVCenter, QString::number(valueViewMax_, 'f', 2));
         painter.drawText(QRectF(4.0, plotRect.bottom() - 8.0, 34.0, 16.0), Qt::AlignRight | Qt::AlignVCenter, QString::number(valueViewMin_, 'f', 2));
 
-        for (const GraphEditorCurve* curve : visibleCurves) {
+        for (const GraphEditorCurve* curve : visCurves) {
             if (curve->points.isEmpty()) {
                 continue;
             }
 
+            // Draw curve path — use cubicTo for non-linear modes.
             QPainterPath path;
             bool started = false;
-            for (const GraphEditorCurvePoint& point : curve->points) {
-                const QPointF pos = pointToCanvasPosition(point);
+            for (int i = 0; i < curve->points.size(); ++i) {
+                const GraphEditorCurvePoint& pt = curve->points[i];
+                const QPointF pos = pointToCanvasPosition(pt);
                 if (!started) {
                     path.moveTo(pos);
                     started = true;
-                } else {
+                    continue;
+                }
+
+                const GraphEditorCurvePoint& prev = curve->points[i - 1];
+                const TangentMode outMode = prev.tangentMode;
+                const TangentMode inMode  = pt.tangentMode;
+
+                if (outMode == TangentMode::Stepped) {
+                    // Horizontal step then vertical jump
+                    path.lineTo(QPointF(pos.x(), path.currentPosition().y()));
                     path.lineTo(pos);
+                } else if (outMode == TangentMode::Linear || inMode == TangentMode::Linear) {
+                    path.lineTo(pos);
+                } else {
+                    // Bezier: compute control points using tangent angles
+                    const float outA = (outMode == TangentMode::Flat) ? 0.f : prev.outAngle;
+                    const float inA  = (inMode  == TangentMode::Flat) ? 0.f : pt.inAngle;
+
+                    // Canvas-space scales
+                    const qreal fw = plotRect.width()  / qMax(1, frameViewEnd_ - frameViewStart_);
+                    const qreal vh = plotRect.height() / qMax(0.0001, valueViewMax_ - valueViewMin_);
+
+                    const qreal prevCanvasX = path.currentPosition().x();
+                    const qreal segW = pos.x() - prevCanvasX;
+
+                    // Out tangent direction in canvas space
+                    const qreal outSlope  = std::tan(static_cast<qreal>(outA) * M_PI / 180.0);
+                    const qreal outDirX   = fw;
+                    const qreal outDirY   = -vh * outSlope; // canvas y inverted
+                    const qreal outLen    = std::hypot(outDirX, outDirY);
+                    const qreal outScale  = (outLen > 1e-8) ? (segW * (1.0 / 3.0)) / outLen : 0.0;
+                    const QPointF cp1(prevCanvasX + outDirX * outScale, path.currentPosition().y() + outDirY * outScale);
+
+                    // In tangent direction in canvas space (arriving from right)
+                    const qreal inSlope   = std::tan(static_cast<qreal>(inA) * M_PI / 180.0);
+                    const qreal inDirX    = -fw;
+                    const qreal inDirY    = vh * inSlope; // reversed
+                    const qreal inLen     = std::hypot(inDirX, inDirY);
+                    const qreal inScale   = (inLen > 1e-8) ? (segW * (1.0 / 3.0)) / inLen : 0.0;
+                    const QPointF cp2(pos.x() + inDirX * inScale, pos.y() + inDirY * inScale);
+
+                    path.cubicTo(cp1, cp2, pos);
                 }
             }
 
             painter.setPen(QPen(curve->color, 2.0));
             painter.drawPath(path);
 
-            painter.setBrush(curve->color);
-            for (const GraphEditorCurvePoint& point : curve->points) {
-                const QPointF pos = pointToCanvasPosition(point);
-                const bool isSelected = isKeySelected(curve->id, point.frame, point.value);
+            // Draw key circles and tangent handles
+            for (int i = 0; i < curve->points.size(); ++i) {
+                const GraphEditorCurvePoint& pt = curve->points[i];
+                const QPointF pos = pointToCanvasPosition(pt);
+                const bool isSelected = isKeySelected(curve->id, pt.frame, pt.value);
+
                 if (isSelected) {
                     painter.setPen(QPen(QColor("#f5f7fb"), 2.0));
                     painter.setBrush(curve->color.lighter(120));
                     painter.drawEllipse(pos, 6.0, 6.0);
+
+                    // Draw tangent handles for selected keys
+                    if (showTangents_ && pt.tangentMode != TangentMode::Stepped && pt.tangentMode != TangentMode::Linear) {
+                        const QColor handleColor = curve->color.darker(140);
+                        painter.setPen(QPen(handleColor, 1.0));
+                        painter.setBrush(handleColor);
+
+                        if (i < curve->points.size() - 1) {
+                            const QPointF outPos = tangentHandlePosition(pos, pt.outAngle, true);
+                            painter.drawLine(pos, outPos);
+                            painter.drawRect(QRectF(outPos.x() - 3.5, outPos.y() - 3.5, 7.0, 7.0));
+                        }
+                        if (i > 0) {
+                            const QPointF inPos = tangentHandlePosition(pos, pt.inAngle, false);
+                            painter.drawLine(pos, inPos);
+                            painter.drawRect(QRectF(inPos.x() - 3.5, inPos.y() - 3.5, 7.0, 7.0));
+                        }
+                    }
                 } else {
                     painter.setPen(Qt::NoPen);
                     painter.setBrush(curve->color);
@@ -149,12 +310,21 @@ void GraphEditorCanvasWidget::paintEvent(QPaintEvent* event)
         }
     }
 
+    // Key drag preview
+    if (draggingKey_) {
+        painter.setPen(QPen(QColor("#f5f7fb"), 1.0, Qt::DashLine));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(dragKeyCurrent_, 6.0, 6.0);
+    }
+
+    // Marquee selection rect
     if (leftDraggingSelection_ && !marqueeRect_.isNull()) {
         painter.setPen(QPen(QColor("#83a9cf"), 1.0, Qt::DashLine));
         painter.setBrush(QColor(93, 130, 171, 38));
         painter.drawRect(marqueeRect_);
     }
 
+    // Current frame indicator
     const qreal currentRatio = static_cast<qreal>(viewModel_.currentFrame - frameViewStart_) / frameSpan;
     const qreal currentX = plotRect.left() + (currentRatio * plotRect.width());
     painter.setPen(QPen(QColor("#f0d26c"), 1.5));
@@ -163,6 +333,10 @@ void GraphEditorCanvasWidget::paintEvent(QPaintEvent* event)
     painter.setPen(QColor("#1f2328"));
     painter.drawText(QRectF(currentX - 16.0, 2.0, 32.0, 14.0), Qt::AlignCenter, QString::number(viewModel_.currentFrame));
 }
+
+// ---------------------------------------------------------------------------
+// Mouse events
+// ---------------------------------------------------------------------------
 
 void GraphEditorCanvasWidget::mousePressEvent(QMouseEvent* event)
 {
@@ -175,27 +349,48 @@ void GraphEditorCanvasWidget::mousePressEvent(QMouseEvent* event)
         return;
     }
 
-    if (event->button() != Qt::LeftButton || !currentFrameChangedCallback_) {
+    if (event->button() != Qt::LeftButton) {
         return;
     }
 
     leftPressInPlot_ = plotRect().contains(event->position());
     leftDraggingSelection_ = false;
     draggingCurrentFrame_ = false;
+    draggingKey_ = false;
+    draggingTangent_ = false;
     selectionDragStart_ = event->pos();
     marqueeRect_ = QRectF();
 
     if (currentFrameHandleRect().contains(event->position())) {
         draggingCurrentFrame_ = true;
-        currentFrameChangedCallback_(frameFromPosition(event->position().x()));
+        if (currentFrameChangedCallback_) {
+            currentFrameChangedCallback_(frameFromPosition(event->position().x()));
+        }
         selectedKeys_.clear();
         update();
         return;
     }
 
+    // Check tangent handle drag first (only when a key is selected)
+    if (showTangents_ && !selectedKeys_.isEmpty() && tryStartTangentDrag(event->position())) {
+        draggingTangent_ = true;
+        leftPressInPlot_ = false;
+        update();
+        return;
+    }
+
+    // Check key drag
     if (trySelectKeyAt(event->position())) {
         if (!selectedKeys_.isEmpty()) {
-            currentFrameChangedCallback_(selectedKeys_.first().frame);
+            if (currentFrameChangedCallback_) {
+                currentFrameChangedCallback_(selectedKeys_.first().frame);
+            }
+            // Prepare for potential drag
+            dragKey_ = selectedKeys_.first();
+            dragKeyOrigFrame_ = dragKey_.frame;
+            dragKeyOrigValue_ = dragKey_.value;
+            dragKeyCurrent_ = pointToCanvasPosition({ dragKey_.frame, dragKey_.value });
+            // We enter drag mode on the first mouseMoveEvent that moves enough
         }
         leftPressInPlot_ = false;
         update();
@@ -234,12 +429,53 @@ void GraphEditorCanvasWidget::mouseMoveEvent(QMouseEvent* event)
     }
 
     if (draggingCurrentFrame_) {
-        currentFrameChangedCallback_(frameFromPosition(event->position().x()));
+        if (currentFrameChangedCallback_) {
+            currentFrameChangedCallback_(frameFromPosition(event->position().x()));
+        }
         update();
         return;
     }
 
-    if (!(event->buttons() & Qt::LeftButton) || !leftPressInPlot_) {
+    if (draggingTangent_) {
+        // Update angle from current mouse pos
+        const QPointF delta = event->position() - tangentDragKeyCanvasPos_;
+        const float angle = angleFromCanvasDelta(delta * (tangentDrag_.isIn ? -1.0 : 1.0));
+        const GraphEditorCurvePoint* pt = findCurvePoint(tangentDrag_.curveId, tangentDrag_.frame);
+        if (pt != nullptr && tangentEditedCallback_) {
+            // Preview: just trigger update; full emit on release
+            Q_UNUSED(pt);
+        }
+        update();
+        return;
+    }
+
+    if (!(event->buttons() & Qt::LeftButton)) {
+        return;
+    }
+
+    // Check if we should enter key drag mode
+    if (!draggingKey_ && !dragKey_.curveId.isEmpty()) {
+        const QPoint delta = event->pos() - selectionDragStart_;
+        if (delta.manhattanLength() >= 4) {
+            draggingKey_ = true;
+        }
+    }
+
+    if (draggingKey_) {
+        const Qt::KeyboardModifiers mods = event->modifiers();
+        int newFrame  = frameFromPosition(event->position().x());
+        double newVal = (mods & Qt::ControlModifier) ? dragKeyOrigValue_ : valueFromPosition(event->position().y());
+        if (mods & Qt::ShiftModifier) {
+            newFrame = dragKeyOrigFrame_;
+        }
+        dragKeyCurrent_ = QPointF(
+            pointToCanvasPosition({ newFrame, newVal }).x(),
+            pointToCanvasPosition({ newFrame, newVal }).y());
+        update();
+        return;
+    }
+
+    if (!leftPressInPlot_) {
         return;
     }
 
@@ -277,6 +513,32 @@ void GraphEditorCanvasWidget::mouseReleaseEvent(QMouseEvent* event)
         return;
     }
 
+    if (draggingTangent_) {
+        draggingTangent_ = false;
+        const QPointF delta = event->position() - tangentDragKeyCanvasPos_;
+        const float angle = angleFromCanvasDelta(delta * (tangentDrag_.isIn ? -1.0 : 1.0));
+        if (tangentEditedCallback_) {
+            tangentEditedCallback_({ tangentDrag_.curveId, tangentDrag_.frame, tangentDrag_.isIn, angle });
+        }
+        leftPressInPlot_ = false;
+        update();
+        return;
+    }
+
+    if (draggingKey_) {
+        draggingKey_ = false;
+        const Qt::KeyboardModifiers mods = event->modifiers();
+        int newFrame = (mods & Qt::ShiftModifier) ? dragKeyOrigFrame_ : frameFromPosition(event->position().x());
+        const double newVal = (mods & Qt::ControlModifier) ? dragKeyOrigValue_ : valueFromPosition(event->position().y());
+        if (keyEditedCallback_ && !dragKey_.curveId.isEmpty()) {
+            keyEditedCallback_({ dragKey_.curveId, dragKeyOrigFrame_, newFrame, newVal });
+        }
+        dragKey_ = {};
+        leftPressInPlot_ = false;
+        update();
+        return;
+    }
+
     if (leftDraggingSelection_) {
         selectKeysInRect(marqueeRect_);
         leftDraggingSelection_ = false;
@@ -287,7 +549,9 @@ void GraphEditorCanvasWidget::mouseReleaseEvent(QMouseEvent* event)
     }
 
     if (leftPressInPlot_) {
-        currentFrameChangedCallback_(frameFromPosition(event->position().x()));
+        if (currentFrameChangedCallback_) {
+            currentFrameChangedCallback_(frameFromPosition(event->position().x()));
+        }
         selectedKeys_.clear();
         leftPressInPlot_ = false;
         marqueeRect_ = QRectF();
@@ -340,6 +604,39 @@ void GraphEditorCanvasWidget::wheelEvent(QWheelEvent* event)
     event->accept();
 }
 
+void GraphEditorCanvasWidget::contextMenuEvent(QContextMenuEvent* event)
+{
+    if (selectedKeys_.isEmpty() || !tangentModeChangedCallback_) {
+        return;
+    }
+
+    QMenu menu(this);
+    QAction* autoAct    = menu.addAction("Auto Tangent");
+    QAction* linearAct  = menu.addAction("Linear");
+    QAction* flatAct    = menu.addAction("Flat");
+    QAction* steppedAct = menu.addAction("Stepped");
+    QAction* brokenAct  = menu.addAction("Broken");
+
+    QAction* chosen = menu.exec(event->globalPos());
+    if (chosen == nullptr) {
+        return;
+    }
+
+    TangentMode mode = TangentMode::Auto;
+    if (chosen == linearAct)  mode = TangentMode::Linear;
+    else if (chosen == flatAct)    mode = TangentMode::Flat;
+    else if (chosen == steppedAct) mode = TangentMode::Stepped;
+    else if (chosen == brokenAct)  mode = TangentMode::Broken;
+
+    for (const SelectedKey& key : selectedKeys_) {
+        tangentModeChangedCallback_({ key.curveId, key.frame, mode });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
 QVector<const GraphEditorCurve*> GraphEditorCanvasWidget::visibleCurves() const
 {
     QVector<const GraphEditorCurve*> curves;
@@ -363,7 +660,6 @@ void GraphEditorCanvasWidget::clearInvalidSelection()
             if (curve.id != key.curveId || !visibleCurveIds_.contains(curve.id)) {
                 continue;
             }
-
             for (const GraphEditorCurvePoint& point : curve.points) {
                 if (point.frame == key.frame && qAbs(point.value - key.value) < 0.0001) {
                     validKeys.append(key);
@@ -371,7 +667,7 @@ void GraphEditorCanvasWidget::clearInvalidSelection()
                 }
             }
         }
-nextKey:
+    nextKey:
         continue;
     }
 
@@ -380,8 +676,8 @@ nextKey:
 
 bool GraphEditorCanvasWidget::trySelectKeyAt(const QPointF& position)
 {
-    const QRectF plotRect = this->plotRect();
-    if (!plotRect.contains(position)) {
+    const QRectF rect = plotRect();
+    if (!rect.contains(position)) {
         return false;
     }
 
@@ -462,12 +758,31 @@ QPointF GraphEditorCanvasWidget::pointToCanvasPosition(const GraphEditorCurvePoi
         rect.bottom() - (yRatio * rect.height()));
 }
 
+QPointF GraphEditorCanvasWidget::tangentHandlePosition(const QPointF& keyPos, float angleDeg, bool isOut) const
+{
+    const QRectF rect = plotRect();
+    const qreal frameSpan = qMax(1, frameViewEnd_ - frameViewStart_);
+    const qreal valueSpan = qMax(0.0001, valueViewMax_ - valueViewMin_);
+    const qreal fw = rect.width() / frameSpan;   // pixels per frame
+    const qreal vh = rect.height() / valueSpan;  // pixels per value
+
+    const qreal angleRad = static_cast<qreal>(angleDeg) * M_PI / 180.0;
+    const qreal dirX =  fw * std::cos(angleRad);
+    const qreal dirY = -vh * std::sin(angleRad); // canvas y is inverted
+    const qreal len = std::hypot(dirX, dirY);
+    if (len < 1e-8) {
+        return keyPos;
+    }
+    const qreal scale = kTangentHandleLength / len;
+    const qreal sign = isOut ? 1.0 : -1.0;
+    return QPointF(keyPos.x() + sign * dirX * scale, keyPos.y() + sign * dirY * scale);
+}
+
 void GraphEditorCanvasWidget::ensureViewRanges()
 {
     if (frameViewEnd_ <= frameViewStart_) {
         frameViewEnd_ = frameViewStart_ + 1;
     }
-
     if (qFuzzyCompare(valueViewMin_ + 1.0, valueViewMax_ + 1.0) || valueViewMax_ <= valueViewMin_) {
         valueViewMin_ -= 1.0;
         valueViewMax_ += 1.0;
@@ -515,6 +830,96 @@ int GraphEditorCanvasWidget::frameFromPosition(int x) const
     return frameViewStart_ + qRound(frameSpan * normalized);
 }
 
+double GraphEditorCanvasWidget::valueFromPosition(int y) const
+{
+    const int plotHeight = qMax(1, height() - (kCanvasMarginTop + kCanvasMarginBottom));
+    const qreal normalized = qBound(
+        0.0,
+        static_cast<qreal>(y - kCanvasMarginTop) / plotHeight,
+        1.0);
+    return valueViewMax_ - normalized * (valueViewMax_ - valueViewMin_);
+}
+
+const GraphEditorCurvePoint* GraphEditorCanvasWidget::findCurvePoint(const QString& curveId, int frame) const
+{
+    for (const GraphEditorCurve& curve : viewModel_.curves) {
+        if (curve.id != curveId) {
+            continue;
+        }
+        for (const GraphEditorCurvePoint& pt : curve.points) {
+            if (pt.frame == frame) {
+                return &pt;
+            }
+        }
+    }
+    return nullptr;
+}
+
+bool GraphEditorCanvasWidget::tryStartTangentDrag(const QPointF& position)
+{
+    constexpr qreal kHandleHitRadius = 7.0;
+
+    for (const SelectedKey& sel : selectedKeys_) {
+        const GraphEditorCurvePoint* pt = findCurvePoint(sel.curveId, sel.frame);
+        if (pt == nullptr) {
+            continue;
+        }
+        if (pt->tangentMode == TangentMode::Stepped || pt->tangentMode == TangentMode::Linear) {
+            continue;
+        }
+
+        const QPointF keyPos = pointToCanvasPosition(*pt);
+
+        // Check out handle (not on last key)
+        for (const GraphEditorCurve& curve : viewModel_.curves) {
+            if (curve.id != sel.curveId) {
+                continue;
+            }
+            for (int i = 0; i < curve.points.size(); ++i) {
+                if (curve.points[i].frame != pt->frame) {
+                    continue;
+                }
+                if (i < curve.points.size() - 1) {
+                    const QPointF outPos = tangentHandlePosition(keyPos, pt->outAngle, true);
+                    if (QLineF(position, outPos).length() <= kHandleHitRadius) {
+                        tangentDrag_ = { sel.curveId, sel.frame, false };
+                        tangentDragKeyCanvasPos_ = keyPos;
+                        return true;
+                    }
+                }
+                if (i > 0) {
+                    const QPointF inPos = tangentHandlePosition(keyPos, pt->inAngle, false);
+                    if (QLineF(position, inPos).length() <= kHandleHitRadius) {
+                        tangentDrag_ = { sel.curveId, sel.frame, true };
+                        tangentDragKeyCanvasPos_ = keyPos;
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+float GraphEditorCanvasWidget::angleFromCanvasDelta(const QPointF& delta) const
+{
+    const QRectF rect = plotRect();
+    const qreal frameSpan = qMax(1, frameViewEnd_ - frameViewStart_);
+    const qreal valueSpan = qMax(0.0001, valueViewMax_ - valueViewMin_);
+    const qreal fw = rect.width() / frameSpan;
+    const qreal vh = rect.height() / valueSpan;
+
+    // Convert canvas delta to frame/value delta
+    const qreal dfFrames = delta.x() / fw;
+    const qreal dvValues = -delta.y() / vh; // canvas y inverted
+
+    return static_cast<float>(std::atan2(dvValues, qMax(0.001, dfFrames)) * 180.0 / M_PI);
+}
+
+// ---------------------------------------------------------------------------
+// GraphEditorPanel
+// ---------------------------------------------------------------------------
+
 GraphEditorPanel::GraphEditorPanel(QWidget* parent)
     : QWidget(parent)
 {
@@ -523,8 +928,9 @@ GraphEditorPanel::GraphEditorPanel(QWidget* parent)
 
     QVBoxLayout* rootLayout = new QVBoxLayout(this);
     rootLayout->setContentsMargins(10, 10, 10, 10);
-    rootLayout->setSpacing(8);
+    rootLayout->setSpacing(6);
 
+    // Header
     objectNameLabel_ = new QLabel(this);
     objectNameLabel_->setStyleSheet("color: #eef2f7; font-weight: 600;");
     rootLayout->addWidget(objectNameLabel_);
@@ -538,6 +944,29 @@ GraphEditorPanel::GraphEditorPanel(QWidget* parent)
     headerDivider->setStyleSheet("color: #343c45; background: #343c45; min-height: 1px; max-height: 1px;");
     rootLayout->addWidget(headerDivider);
 
+    // Toolbar (Phase 4)
+    QToolBar* toolbar = new QToolBar(this);
+    toolbar->setIconSize(QSize(16, 16));
+    toolbar->setStyleSheet("QToolBar { border: none; background: #262d35; spacing: 2px; }"
+                           "QToolButton { color: #c8d0da; padding: 2px 6px; border-radius: 3px; }"
+                           "QToolButton:hover { background: #343c45; }");
+
+    canvasWidget_ = new GraphEditorCanvasWidget(this);
+
+    QAction* frameAllAction = toolbar->addAction("Frame All");
+    QAction* frameSelAction = toolbar->addAction("Frame Selected");
+    toolbar->addSeparator();
+    QAction* showTangentsAction = toolbar->addAction("Tangents");
+    showTangentsAction->setCheckable(true);
+    showTangentsAction->setChecked(true);
+
+    connect(frameAllAction,     &QAction::triggered, canvasWidget_, &GraphEditorCanvasWidget::frameAll);
+    connect(frameSelAction,     &QAction::triggered, canvasWidget_, &GraphEditorCanvasWidget::frameSelected);
+    connect(showTangentsAction, &QAction::toggled,   canvasWidget_, &GraphEditorCanvasWidget::setShowTangents);
+
+    rootLayout->addWidget(toolbar);
+
+    // Content area
     QHBoxLayout* contentLayout = new QHBoxLayout();
     contentLayout->setContentsMargins(0, 0, 0, 0);
     contentLayout->setSpacing(10);
@@ -550,7 +979,6 @@ GraphEditorPanel::GraphEditorPanel(QWidget* parent)
     curveListWidget_->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     contentLayout->addWidget(curveListWidget_);
 
-    canvasWidget_ = new GraphEditorCanvasWidget(this);
     canvasWidget_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     contentLayout->addWidget(canvasWidget_, 1);
 
@@ -584,6 +1012,26 @@ void GraphEditorPanel::setCurrentFrameChangedCallback(std::function<void(int)> c
     canvasWidget_->setCurrentFrameChangedCallback(std::move(callback));
 }
 
+void GraphEditorPanel::setKeyEditedCallback(std::function<void(const GraphEditorKeyEdit&)> callback)
+{
+    canvasWidget_->setKeyEditedCallback(std::move(callback));
+}
+
+void GraphEditorPanel::setTangentEditedCallback(std::function<void(const TangentEdit&)> callback)
+{
+    canvasWidget_->setTangentEditedCallback(std::move(callback));
+}
+
+void GraphEditorPanel::setTangentModeChangedCallback(std::function<void(const TangentModeChange&)> callback)
+{
+    canvasWidget_->setTangentModeChangedCallback(std::move(callback));
+}
+
+void GraphEditorPanel::fireKeyEditForTest(const GraphEditorKeyEdit& edit)
+{
+    canvasWidget_->fireKeyEditForTest(edit);
+}
+
 void GraphEditorPanel::syncVisibleCurves()
 {
     QVector<QString> visibleCurveIds;
@@ -600,3 +1048,4 @@ void GraphEditorPanel::syncVisibleCurves()
 
     canvasWidget_->setViewModel(viewModel_, visibleCurveIds);
 }
+

@@ -32,6 +32,7 @@ add_executable(phoenix_editor
     ${CMAKE_SOURCE_DIR}/src/animation/editor/EditorAnimationFlowController.cpp
     ${CMAKE_SOURCE_DIR}/src/animation/editor/EditorAnimationSceneMutation.cpp
     ${CMAKE_SOURCE_DIR}/src/rigging/editor/EditorRiggingController.cpp
+    ${CMAKE_SOURCE_DIR}/src/animation/data/CurveInterpolator.cpp
     ${CMAKE_SOURCE_DIR}/src/animation/data/ObjectAnimationState.cpp
     ${CMAKE_SOURCE_DIR}/src/animation/scene/SceneAnimationState.cpp
     ${CMAKE_SOURCE_DIR}/src/rigging/data/ObjectRigState.cpp

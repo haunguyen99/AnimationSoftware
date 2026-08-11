@@ -1,16 +1,6 @@
 #include "animation/scene/SceneAnimationState.h"
 
-namespace
-{
-Transform interpolateTransform(const Transform& a, const Transform& b, float t)
-{
-    Transform result;
-    result.translation = a.translation * (1.0f - t) + b.translation * t;
-    result.rotation = QQuaternion::slerp(a.rotation, b.rotation, t);
-    result.scale = a.scale * (1.0f - t) + b.scale * t;
-    return result;
-}
-}
+#include "animation/data/CurveInterpolator.h"
 
 void SceneAnimationState::clear()
 {
@@ -113,28 +103,38 @@ Transform SceneAnimationState::evaluateObjectTransformAtFrame(const SceneObject&
         return object.authoredTransform();
     }
 
-    if (frame <= keyframes.first().frame) {
-        return keyframes.first().transform;
-    }
+    const float f = static_cast<float>(frame);
 
-    if (frame >= keyframes.last().frame) {
-        return keyframes.last().transform;
-    }
-
-    for (int index = 0; index < keyframes.size() - 1; ++index) {
-        const TransformKeyframe& a = keyframes.at(index);
-        const TransformKeyframe& b = keyframes.at(index + 1);
-        if (frame < a.frame || frame > b.frame) {
-            continue;
+    // Build a per-channel key array and evaluate via CurveInterpolator.
+    auto buildKeys = [&keyframes](auto valueFn) {
+        QVector<CurveInterpolator::CurveKey> keys;
+        keys.reserve(keyframes.size());
+        for (const TransformKeyframe& kf : keyframes) {
+            keys.append({ static_cast<float>(kf.frame), valueFn(kf), kf.tangent });
         }
+        return keys;
+    };
 
-        if (a.frame == b.frame) {
-            return b.transform;
-        }
+    const auto txKeys = buildKeys([](const TransformKeyframe& kf) { return static_cast<double>(kf.transform.translation.x()); });
+    const auto tyKeys = buildKeys([](const TransformKeyframe& kf) { return static_cast<double>(kf.transform.translation.y()); });
+    const auto tzKeys = buildKeys([](const TransformKeyframe& kf) { return static_cast<double>(kf.transform.translation.z()); });
+    const auto rxKeys = buildKeys([](const TransformKeyframe& kf) { return static_cast<double>(kf.transform.rotation.toEulerAngles().x()); });
+    const auto ryKeys = buildKeys([](const TransformKeyframe& kf) { return static_cast<double>(kf.transform.rotation.toEulerAngles().y()); });
+    const auto rzKeys = buildKeys([](const TransformKeyframe& kf) { return static_cast<double>(kf.transform.rotation.toEulerAngles().z()); });
+    const auto sxKeys = buildKeys([](const TransformKeyframe& kf) { return static_cast<double>(kf.transform.scale.x()); });
+    const auto syKeys = buildKeys([](const TransformKeyframe& kf) { return static_cast<double>(kf.transform.scale.y()); });
+    const auto szKeys = buildKeys([](const TransformKeyframe& kf) { return static_cast<double>(kf.transform.scale.z()); });
 
-        const float t = static_cast<float>(frame - a.frame) / static_cast<float>(b.frame - a.frame);
-        return interpolateTransform(a.transform, b.transform, t);
-    }
-
-    return object.authoredTransform();
+    Transform result;
+    result.translation.setX(static_cast<float>(CurveInterpolator::evaluateChannel(txKeys, f)));
+    result.translation.setY(static_cast<float>(CurveInterpolator::evaluateChannel(tyKeys, f)));
+    result.translation.setZ(static_cast<float>(CurveInterpolator::evaluateChannel(tzKeys, f)));
+    result.rotation = QQuaternion::fromEulerAngles(
+        static_cast<float>(CurveInterpolator::evaluateChannel(rxKeys, f)),
+        static_cast<float>(CurveInterpolator::evaluateChannel(ryKeys, f)),
+        static_cast<float>(CurveInterpolator::evaluateChannel(rzKeys, f)));
+    result.scale.setX(static_cast<float>(CurveInterpolator::evaluateChannel(sxKeys, f)));
+    result.scale.setY(static_cast<float>(CurveInterpolator::evaluateChannel(syKeys, f)));
+    result.scale.setZ(static_cast<float>(CurveInterpolator::evaluateChannel(szKeys, f)));
+    return result;
 }

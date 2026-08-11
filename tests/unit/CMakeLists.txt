@@ -2,6 +2,7 @@ find_package(Qt6 REQUIRED COMPONENTS Gui Widgets Test OpenGLWidgets OpenGL)
 
 add_executable(scene_transform_tests
     SceneTransformTests.cpp
+    ${CMAKE_SOURCE_DIR}/src/animation/data/CurveInterpolator.cpp
     ${CMAKE_SOURCE_DIR}/src/animation/data/ObjectAnimationState.cpp
     ${CMAKE_SOURCE_DIR}/src/animation/scene/SceneAnimationState.cpp
     ${CMAKE_SOURCE_DIR}/src/rigging/data/ObjectRigState.cpp
@@ -58,10 +59,14 @@ add_executable(editor_ui_tests
     ${CMAKE_SOURCE_DIR}/apps/editor/src/ViewportWorkspaceWidget.cpp
     ${CMAKE_SOURCE_DIR}/src/core/app/EditorShell.cpp
     ${CMAKE_SOURCE_DIR}/src/core/app/EditorShellContexts.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/app/EditorMenuBar.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/app/EditorTheme.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/app/EditorToolBar.cpp
     ${CMAKE_SOURCE_DIR}/src/core/app/WorkspaceManager.cpp
     ${CMAKE_SOURCE_DIR}/src/animation/editor/EditorAnimationFlowController.cpp
     ${CMAKE_SOURCE_DIR}/src/animation/editor/EditorAnimationSceneMutation.cpp
     ${CMAKE_SOURCE_DIR}/src/rigging/editor/EditorRiggingController.cpp
+    ${CMAKE_SOURCE_DIR}/src/animation/data/CurveInterpolator.cpp
     ${CMAKE_SOURCE_DIR}/src/animation/data/ObjectAnimationState.cpp
     ${CMAKE_SOURCE_DIR}/src/animation/scene/SceneAnimationState.cpp
     ${CMAKE_SOURCE_DIR}/src/rigging/data/ObjectRigState.cpp

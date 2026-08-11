@@ -222,6 +222,9 @@ private:
     void undoLastChange();
     void redoLastChange();
     void updateUndoRedoActions();
+    void handleGraphEditorKeyEdited(const GraphEditorKeyEdit& edit);
+    void handleGraphEditorTangentEdited(const TangentEdit& edit);
+    void handleGraphEditorTangentModeChanged(const TangentModeChange& change);
 
     WorkspaceManager* workspaceManager_ = nullptr;
     ViewportWorkspaceWidget* viewport_ = nullptr;
